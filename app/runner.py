@@ -396,6 +396,73 @@ class JobManager:
         self.save_job_metadata(job)
         return job
 
+    def create_job_from_documents(
+        self,
+        plan_text: str,
+        handoff_text: str,
+        test_report_text: str,
+        constraints: Mapping[str, str],
+        project_zip: bytes | None = None,
+        project_zip_filename: str = "project.zip",
+        project_goal: str = "",
+    ) -> Job:
+        if self.current_job and self.current_job.state in {"planning", "revising", "running", "stopping"}:
+            raise PlanError("A job is already active.")
+
+        tasks = require_valid_plan(plan_text)
+        if not handoff_text.strip():
+            raise PlanError("HANDOFF.md must not be empty.")
+        if not test_report_text.strip():
+            raise PlanError("TEST_REPORT.md must not be empty.")
+
+        cleaned_goal = project_goal.strip() or "Imported execution documents"
+        job_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
+        job_dir = self.jobs_dir / job_id
+        workspace_dir = job_dir / "workspace"
+        logs_dir = job_dir / "logs"
+        constraints_dir = workspace_dir / "constraints"
+        inputs_dir = job_dir / "inputs"
+        input_constraints_dir = inputs_dir / "constraints"
+
+        workspace_dir.mkdir(parents=True, exist_ok=False)
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        constraints_dir.mkdir(parents=True, exist_ok=True)
+        inputs_dir.mkdir(parents=True, exist_ok=True)
+        input_constraints_dir.mkdir(parents=True, exist_ok=True)
+
+        (inputs_dir / "project_goal.txt").write_text(cleaned_goal, encoding="utf-8")
+        if project_zip is not None:
+            (inputs_dir / "source.zip").write_bytes(project_zip)
+            extract_project_zip(project_zip, project_zip_filename, workspace_dir)
+
+        documents = {
+            DOCUMENT_FILES["plan"]: plan_text,
+            DOCUMENT_FILES["handoff"]: handoff_text,
+            DOCUMENT_FILES["test_report"]: test_report_text,
+        }
+        for filename, content in documents.items():
+            (workspace_dir / filename).write_text(content, encoding="utf-8")
+            (inputs_dir / filename).write_text(content, encoding="utf-8")
+
+        self.write_constraints(constraints_dir, input_constraints_dir, constraints)
+        subprocess.run(["git", "init"], cwd=workspace_dir, text=True, capture_output=True, check=False)
+
+        total, pending, completed = summarize_tasks(tasks)
+        job = Job(
+            id=job_id,
+            job_dir=job_dir,
+            workspace_dir=workspace_dir,
+            logs_dir=logs_dir,
+            project_goal=cleaned_goal,
+            state="awaiting_start",
+            total_tasks=total,
+            pending_tasks=pending,
+            completed_tasks=completed,
+        )
+        self.current_job = job
+        self.save_job_metadata(job)
+        return job
+
     def write_constraints(
         self,
         constraints_dir: Path,

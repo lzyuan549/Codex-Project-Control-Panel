@@ -1,6 +1,6 @@
 # Docker Web Codex Plan Runner
 
-一个单容器 Web 控制台：上传基础项目 ZIP 和项目题目后，先让 Codex 生成 `PLAN.md`、`HANDOFF.md`、`TEST_REPORT.md`，用户确认后再按 `PLAN.md` 每轮最多 10 个未完成项循环执行。
+一个单容器 Web 控制台：可以上传基础项目 ZIP 和项目题目后生成 `PLAN.md`、`HANDOFF.md`、`TEST_REPORT.md`，也可以直接导入这三份文档跳过规划；用户确认后再按 `PLAN.md` 每轮最多 10 个未完成项循环执行。
 
 ## 快速部署
 
@@ -37,6 +37,8 @@ docker compose build --no-cache
 
 打开 `http://服务器IP:8000`，登录后：
 
+### 生成规划后执行
+
 1. 上传基础项目 ZIP。通常是 `auth-only.zip`，或一个包含 `auth-only/README.md` 的现有项目 ZIP。
 2. 填写项目题目，例如“校园综合服务网页，课程表/失物/二手/公告等全整合，适配手机端”。
 3. 可选上传 `constraints/*.md` 或 `constraints/*.txt`。
@@ -44,12 +46,21 @@ docker compose build --no-cache
 5. 如果规划不合适，在反馈框输入修改意见，点击“调整规划”。
 6. 满意后点击“开始执行”，Codex 会按 `PLAN.md` 每轮最多推进 10 个未完成项。
 
+### 导入执行文档后执行
+
+1. 切换到“导入文档”模式。
+2. 上传已有的 `PLAN.md`、`HANDOFF.md`、`TEST_REPORT.md`。
+3. 可选上传基础项目 ZIP 和 `constraints/*.md` / `constraints/*.txt`。
+4. 点击“导入文档”，任务会直接进入“等待开始”状态。
+5. 点击“开始执行”，Codex 会跳过规划阶段，直接按上传的 `PLAN.md` 执行。
+
 `auth-only` 只作为基础权限模板或复用来源，最终开发仍应落到 `frontend/`、`backend/`、`db/`。
 
 ## 运行逻辑
 
 - 每次上传都会创建一个新的 workspace。
 - 原始 ZIP、项目题目和约束文件会保存到 `inputs/`。
+- 导入执行文档模式会把三份原始文档也保存到 `inputs/`，并覆盖 workspace 中的同名文档。
 - 程序会在 workspace 中执行 `git init`。
 - 规划阶段只允许生成/修订：
   - `PLAN.md`

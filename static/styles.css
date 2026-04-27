@@ -15,6 +15,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -109,6 +113,32 @@ h2 {
 .stack {
   display: grid;
   gap: 14px;
+}
+
+.mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px;
+  background: rgba(255, 253, 248, 0.82);
+}
+
+.mode-option {
+  color: var(--muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+.mode-option:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.mode-option.active {
+  color: #fffdf8;
+  background: var(--ink);
 }
 
 label {
@@ -286,6 +316,22 @@ textarea {
 .file-drop small,
 .muted-line {
   color: var(--muted);
+}
+
+.document-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.document-drop {
+  min-height: 92px;
+  border-color: var(--ink);
+  background: rgba(23, 19, 15, 0.05);
+}
+
+.document-drop span {
+  font-size: 17px;
 }
 
 .message-box,
@@ -488,6 +534,7 @@ textarea {
   .status-strip,
   .grid,
   .lower-grid,
+  .document-grid,
   .history-layout,
   .revision-box {
     grid-template-columns: 1fr;

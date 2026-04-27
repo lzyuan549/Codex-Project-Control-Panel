@@ -25,6 +25,35 @@ class RevisionRequest(BaseModel):
     feedback: str
 
 
+async def read_text_upload(upload: UploadFile | None, label: str, *, require_content: bool = False) -> str:
+    if upload is None or not upload.filename:
+        raise HTTPException(status_code=400, detail=f"{label} is required")
+    if Path(upload.filename).suffix.lower() != ".md":
+        raise HTTPException(status_code=400, detail=f"{label} must be a .md file")
+    try:
+        content = (await upload.read()).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"{label} must be UTF-8 text") from exc
+    if require_content and not content.strip():
+        raise HTTPException(status_code=400, detail=f"{label} must not be empty")
+    return content
+
+
+async def read_constraint_uploads(constraints: list[UploadFile] | None) -> dict[str, str]:
+    constraint_map: dict[str, str] = {}
+    for item in constraints or []:
+        if not item.filename:
+            continue
+        suffix = Path(item.filename).suffix.lower()
+        if suffix not in {".md", ".txt"}:
+            raise HTTPException(status_code=400, detail=f"Constraint '{item.filename}' must be .md or .txt")
+        try:
+            constraint_map[item.filename] = (await item.read()).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"Constraint '{item.filename}' must be UTF-8 text") from exc
+    return constraint_map
+
+
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
     settings = load_settings()
@@ -85,17 +114,7 @@ async def upload(
     if manager.current_job and manager.current_job.state in {"planning", "revising", "running", "stopping"}:
         raise HTTPException(status_code=409, detail="A job is already active")
 
-    constraint_map: dict[str, str] = {}
-    for item in constraints or []:
-        if not item.filename:
-            continue
-        suffix = Path(item.filename).suffix.lower()
-        if suffix not in {".md", ".txt"}:
-            raise HTTPException(status_code=400, detail=f"Constraint '{item.filename}' must be .md or .txt")
-        try:
-            constraint_map[item.filename] = (await item.read()).decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise HTTPException(status_code=400, detail=f"Constraint '{item.filename}' must be UTF-8 text") from exc
+    constraint_map = await read_constraint_uploads(constraints)
 
     try:
         job = manager.create_job_from_zip(
@@ -103,6 +122,46 @@ async def upload(
             project_zip.filename or "project.zip",
             project_goal,
             constraint_map,
+        )
+    except PlanError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "job": job.to_dict()}
+
+
+@app.post("/api/upload-documents")
+async def upload_documents(
+    plan: UploadFile | None = File(None),
+    handoff: UploadFile | None = File(None),
+    test_report: UploadFile | None = File(None),
+    project_zip: UploadFile | None = File(None),
+    project_goal: str = Form(""),
+    constraints: list[UploadFile] | None = File(None),
+    _: None = Depends(require_session),
+) -> dict:
+    manager: JobManager = app.state.job_manager
+    if manager.current_job and manager.current_job.state in {"planning", "revising", "running", "stopping"}:
+        raise HTTPException(status_code=409, detail="A job is already active")
+
+    plan_text = await read_text_upload(plan, "PLAN.md")
+    handoff_text = await read_text_upload(handoff, "HANDOFF.md", require_content=True)
+    test_report_text = await read_text_upload(test_report, "TEST_REPORT.md", require_content=True)
+    constraint_map = await read_constraint_uploads(constraints)
+
+    project_zip_bytes: bytes | None = None
+    project_zip_filename = "project.zip"
+    if project_zip is not None and project_zip.filename:
+        project_zip_bytes = await project_zip.read()
+        project_zip_filename = project_zip.filename
+
+    try:
+        job = manager.create_job_from_documents(
+            plan_text=plan_text,
+            handoff_text=handoff_text,
+            test_report_text=test_report_text,
+            constraints=constraint_map,
+            project_zip=project_zip_bytes,
+            project_zip_filename=project_zip_filename,
+            project_goal=project_goal,
         )
     except PlanError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

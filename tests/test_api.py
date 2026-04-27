@@ -180,3 +180,120 @@ def test_login_upload_plan_revise_execute_history_and_download(tmp_path: Path, m
 
         bad_history = client.get("/api/history/../bad")
         assert bad_history.status_code in {404, 422}
+
+
+def test_document_import_uploads_and_starts_without_planning(tmp_path: Path, monkeypatch) -> None:
+    fake_codex = make_fake_codex(tmp_path / "fake_codex.py")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    monkeypatch.setenv("SESSION_SECRET", "test-secret")
+    monkeypatch.setenv("CODEX_BIN", f'"{sys.executable}" "{fake_codex}"')
+
+    with TestClient(app) as client:
+        assert client.post("/api/upload-documents").status_code == 401
+        assert client.post("/api/login", json={"password": "secret"}).status_code == 200
+
+        files = [
+            ("plan", ("PLAN.md", b"# Imported\n\n- [ ] task 1\n- [ ] task 2\n", "text/markdown")),
+            ("handoff", ("HANDOFF.md", "handoff ready\n".encode("utf-8"), "text/markdown")),
+            ("test_report", ("TEST_REPORT.md", "report ready\n".encode("utf-8"), "text/markdown")),
+            (
+                "project_zip",
+                (
+                    "base.zip",
+                    make_zip({"README.md": "# base\n", "PLAN.md": "# Old\n- [ ] old task\n"}),
+                    "application/zip",
+                ),
+            ),
+            ("constraints", ("rules.txt", b"keep it tidy\n", "text/plain")),
+        ]
+        uploaded = client.post("/api/upload-documents", data={"project_goal": "直接导入"}, files=files)
+
+        assert uploaded.status_code == 200
+        job_id = uploaded.json()["job"]["id"]
+        assert uploaded.json()["job"]["state"] == "awaiting_start"
+        assert uploaded.json()["job"]["pending_tasks"] == 2
+
+        plan_doc = client.get("/api/documents/plan")
+        assert plan_doc.status_code == 200
+        assert "# Imported" in plan_doc.json()["content"]
+        assert "# Old" not in plan_doc.json()["content"]
+
+        tree = client.get("/api/files")
+        assert tree.status_code == 200
+        paths = {item["path"] for item in tree.json()["files"]}
+        assert {"PLAN.md", "HANDOFF.md", "TEST_REPORT.md", "README.md", "constraints/rules.txt"} <= paths
+
+        started = client.post("/api/job/start", json={})
+        assert started.status_code == 200
+        final_status = wait_for_state(client, "completed")
+        assert final_status["job"]["id"] == job_id
+        assert final_status["job"]["pending_tasks"] == 0
+
+
+def test_document_import_rejects_invalid_documents(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    monkeypatch.setenv("SESSION_SECRET", "test-secret")
+
+    with TestClient(app) as client:
+        assert client.post("/api/login", json={"password": "secret"}).status_code == 200
+
+        missing = client.post(
+            "/api/upload-documents",
+            files=[
+                ("handoff", ("HANDOFF.md", b"handoff\n", "text/markdown")),
+                ("test_report", ("TEST_REPORT.md", b"report\n", "text/markdown")),
+            ],
+        )
+        assert missing.status_code == 400
+
+        bad_encoding = client.post(
+            "/api/upload-documents",
+            files=[
+                ("plan", ("PLAN.md", b"\xff", "text/markdown")),
+                ("handoff", ("HANDOFF.md", b"handoff\n", "text/markdown")),
+                ("test_report", ("TEST_REPORT.md", b"report\n", "text/markdown")),
+            ],
+        )
+        assert bad_encoding.status_code == 400
+
+        no_tasks = client.post(
+            "/api/upload-documents",
+            files=[
+                ("plan", ("PLAN.md", b"# no tasks\n", "text/markdown")),
+                ("handoff", ("HANDOFF.md", b"handoff\n", "text/markdown")),
+                ("test_report", ("TEST_REPORT.md", b"report\n", "text/markdown")),
+            ],
+        )
+        assert no_tasks.status_code == 400
+
+        blank_handoff = client.post(
+            "/api/upload-documents",
+            files=[
+                ("plan", ("PLAN.md", b"- [ ] task\n", "text/markdown")),
+                ("handoff", ("HANDOFF.md", b" \n", "text/markdown")),
+                ("test_report", ("TEST_REPORT.md", b"report\n", "text/markdown")),
+            ],
+        )
+        assert blank_handoff.status_code == 400
+
+        blank_report = client.post(
+            "/api/upload-documents",
+            files=[
+                ("plan", ("PLAN.md", b"- [ ] task\n", "text/markdown")),
+                ("handoff", ("HANDOFF.md", b"handoff\n", "text/markdown")),
+                ("test_report", ("TEST_REPORT.md", b" \n", "text/markdown")),
+            ],
+        )
+        assert blank_report.status_code == 400
+
+        not_markdown = client.post(
+            "/api/upload-documents",
+            files=[
+                ("plan", ("PLAN.txt", b"- [ ] task\n", "text/plain")),
+                ("handoff", ("HANDOFF.md", b"handoff\n", "text/markdown")),
+                ("test_report", ("TEST_REPORT.md", b"report\n", "text/markdown")),
+            ],
+        )
+        assert not_markdown.status_code == 400

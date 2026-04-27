@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Codex Plan Runner</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=document-import-20260427" />
   </head>
   <body>
     <main class="shell">
@@ -58,10 +58,14 @@
             <div class="panel-heading">
               <div>
                 <p class="eyebrow">输入</p>
-                <h2>基础项目与题目</h2>
+                <h2 id="inputPanelTitle">基础项目与题目</h2>
               </div>
             </div>
             <form id="uploadForm" class="stack">
+              <div class="mode-switch" role="group" aria-label="上传模式">
+                <button id="uploadModePlan" class="mode-option active" type="button">生成规划</button>
+                <button id="uploadModeDocuments" class="mode-option" type="button">导入文档</button>
+              </div>
               <label>
                 项目题目
                 <textarea id="projectGoalInput" rows="4" placeholder="校园综合服务网页，课程表/失物/二手/公告等全整合，适配手机端"></textarea>
@@ -76,6 +80,23 @@
                 <span>constraints/</span>
                 <small id="constraintsName">可多选 .md / .txt 约束文件</small>
               </label>
+              <div id="documentImportFields" class="document-grid" hidden>
+                <label class="file-drop document-drop">
+                  <input id="planFileInput" type="file" name="plan" accept=".md" />
+                  <span>PLAN.md</span>
+                  <small id="planFileName">选择执行计划文档</small>
+                </label>
+                <label class="file-drop document-drop">
+                  <input id="handoffFileInput" type="file" name="handoff" accept=".md" />
+                  <span>HANDOFF.md</span>
+                  <small id="handoffFileName">选择交接文档</small>
+                </label>
+                <label class="file-drop document-drop">
+                  <input id="testReportFileInput" type="file" name="test_report" accept=".md" />
+                  <span>TEST_REPORT.md</span>
+                  <small id="testReportFileName">选择测试记录文档</small>
+                </label>
+              </div>
               <div class="button-row">
                 <button id="uploadButton" type="submit">上传项目</button>
                 <button id="planButton" type="button" class="accent">生成规划</button>
@@ -178,6 +199,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=document-import-20260427"></script>
   </body>
 </html>

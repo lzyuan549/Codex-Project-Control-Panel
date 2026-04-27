@@ -6,11 +6,21 @@ const passwordInput = document.querySelector("#passwordInput");
 const logoutButton = document.querySelector("#logoutButton");
 const gatewayBadge = document.querySelector("#gatewayBadge");
 const uploadForm = document.querySelector("#uploadForm");
+const inputPanelTitle = document.querySelector("#inputPanelTitle");
+const uploadModePlan = document.querySelector("#uploadModePlan");
+const uploadModeDocuments = document.querySelector("#uploadModeDocuments");
 const projectGoalInput = document.querySelector("#projectGoalInput");
 const projectZipInput = document.querySelector("#projectZipInput");
 const projectZipName = document.querySelector("#projectZipName");
 const constraintsInput = document.querySelector("#constraintsInput");
 const constraintsName = document.querySelector("#constraintsName");
+const documentImportFields = document.querySelector("#documentImportFields");
+const planFileInput = document.querySelector("#planFileInput");
+const handoffFileInput = document.querySelector("#handoffFileInput");
+const testReportFileInput = document.querySelector("#testReportFileInput");
+const planFileName = document.querySelector("#planFileName");
+const handoffFileName = document.querySelector("#handoffFileName");
+const testReportFileName = document.querySelector("#testReportFileName");
 const uploadMessage = document.querySelector("#uploadMessage");
 const uploadButton = document.querySelector("#uploadButton");
 const planButton = document.querySelector("#planButton");
@@ -52,6 +62,7 @@ let currentState = "idle";
 let selectedHistoryId = null;
 let activeDocument = "plan";
 let activeHistoryView = "plan";
+let uploadMode = "plan";
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -115,6 +126,36 @@ function setBusy(state) {
   startButton.disabled = active || !["awaiting_start", "stopped"].includes(state);
   stopButton.disabled = !["planning", "revising", "running"].includes(state);
   downloadLink.classList.toggle("disabled-link", !hasJob);
+}
+
+function setFileName(input, target, fallback) {
+  target.textContent = input.files[0] ? input.files[0].name : fallback;
+}
+
+function updateProjectZipName() {
+  const fallback =
+    uploadMode === "documents"
+      ? "可选上传 auth-only.zip 或现有项目 ZIP"
+      : "可上传 auth-only.zip 或包含 auth-only/README.md 的项目 ZIP";
+  setFileName(projectZipInput, projectZipName, fallback);
+}
+
+function setUploadMode(mode) {
+  uploadMode = mode;
+  uploadMessage.textContent = "";
+  uploadModePlan.classList.toggle("active", mode === "plan");
+  uploadModeDocuments.classList.toggle("active", mode === "documents");
+  uploadModePlan.setAttribute("aria-pressed", String(mode === "plan"));
+  uploadModeDocuments.setAttribute("aria-pressed", String(mode === "documents"));
+  documentImportFields.hidden = mode !== "documents";
+  planButton.hidden = mode === "documents";
+  inputPanelTitle.textContent = mode === "documents" ? "执行文档与项目" : "基础项目与题目";
+  uploadButton.textContent = mode === "documents" ? "导入文档" : "上传项目";
+  projectGoalInput.placeholder =
+    mode === "documents"
+      ? "可选：给这次导入的执行任务起一个名字"
+      : "校园综合服务网页，课程表/失物/二手/公告等全整合，适配手机端";
+  updateProjectZipName();
 }
 
 function updateStatus(payload) {
@@ -372,11 +413,14 @@ logoutButton.addEventListener("click", async () => {
   showLogin();
 });
 
-projectZipInput.addEventListener("change", () => {
-  projectZipName.textContent = projectZipInput.files[0]
-    ? projectZipInput.files[0].name
-    : "可上传 auth-only.zip 或包含 auth-only/README.md 的项目 ZIP";
-});
+uploadModePlan.addEventListener("click", () => setUploadMode("plan"));
+uploadModeDocuments.addEventListener("click", () => setUploadMode("documents"));
+projectZipInput.addEventListener("change", updateProjectZipName);
+planFileInput.addEventListener("change", () => setFileName(planFileInput, planFileName, "选择执行计划文档"));
+handoffFileInput.addEventListener("change", () => setFileName(handoffFileInput, handoffFileName, "选择交接文档"));
+testReportFileInput.addEventListener("change", () =>
+  setFileName(testReportFileInput, testReportFileName, "选择测试记录文档")
+);
 
 constraintsInput.addEventListener("change", () => {
   const count = constraintsInput.files.length;
@@ -386,26 +430,41 @@ constraintsInput.addEventListener("change", () => {
 uploadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   uploadMessage.textContent = "";
-  if (!projectGoalInput.value.trim()) {
+  const importingDocuments = uploadMode === "documents";
+  if (!importingDocuments && !projectGoalInput.value.trim()) {
     uploadMessage.textContent = "请填写项目题目。";
     return;
   }
-  if (!projectZipInput.files[0]) {
+  if (!importingDocuments && !projectZipInput.files[0]) {
     uploadMessage.textContent = "请先选择基础项目 ZIP。";
+    return;
+  }
+  if (importingDocuments && (!planFileInput.files[0] || !handoffFileInput.files[0] || !testReportFileInput.files[0])) {
+    uploadMessage.textContent = "请上传 PLAN.md、HANDOFF.md 和 TEST_REPORT.md。";
     return;
   }
 
   const form = new FormData();
   form.append("project_goal", projectGoalInput.value.trim());
-  form.append("project_zip", projectZipInput.files[0]);
+  if (projectZipInput.files[0]) {
+    form.append("project_zip", projectZipInput.files[0]);
+  }
+  if (importingDocuments) {
+    form.append("plan", planFileInput.files[0]);
+    form.append("handoff", handoffFileInput.files[0]);
+    form.append("test_report", testReportFileInput.files[0]);
+  }
   for (const file of constraintsInput.files) {
     form.append("constraints", file);
   }
 
   try {
-    await api("/api/upload", { method: "POST", body: form });
-    uploadMessage.textContent = "上传完成，可以生成规划。";
+    await api(importingDocuments ? "/api/upload-documents" : "/api/upload", { method: "POST", body: form });
+    uploadMessage.textContent = importingDocuments ? "文档已导入，可开始执行。" : "上传完成，可以生成规划。";
     await refreshStatus();
+    if (importingDocuments) {
+      setActiveDocument("plan");
+    }
   } catch (error) {
     uploadMessage.textContent = error.message;
   }
@@ -491,4 +550,5 @@ async function bootstrap() {
   }
 }
 
+setUploadMode("plan");
 bootstrap();

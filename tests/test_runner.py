@@ -115,6 +115,44 @@ def test_create_job_from_zip_rejects_empty_goal_and_unsafe_zip(tmp_path: Path) -
         raise AssertionError("expected PlanError")
 
 
+def test_create_job_from_documents_imports_docs_and_optional_zip(tmp_path: Path) -> None:
+    manager = JobManager(tmp_path / "data")
+    plan = "# Imported Plan\n\n- [ ] direct task\n- [x] finished task\n"
+    job = manager.create_job_from_documents(
+        plan,
+        "handoff ready\n",
+        "test report ready\n",
+        {"rules.txt": "follow the plan\n"},
+        project_zip=make_zip({"README.md": "# base\n", "PLAN.md": "# old\n- [ ] old task\n"}),
+        project_zip_filename="base.zip",
+        project_goal="  Direct import  ",
+    )
+
+    assert job.state == "awaiting_start"
+    assert job.project_goal == "Direct import"
+    assert job.total_tasks == 2
+    assert job.pending_tasks == 1
+    assert job.completed_tasks == 1
+    assert (job.workspace_dir / "README.md").exists()
+    assert (job.workspace_dir / "PLAN.md").read_text(encoding="utf-8") == plan
+    assert (job.workspace_dir / "HANDOFF.md").read_text(encoding="utf-8") == "handoff ready\n"
+    assert (job.workspace_dir / "TEST_REPORT.md").read_text(encoding="utf-8") == "test report ready\n"
+    assert (job.inputs_dir / "PLAN.md").read_text(encoding="utf-8") == plan
+    assert (job.inputs_dir / "source.zip").exists()
+    assert (job.constraints_dir / "rules.txt").exists()
+
+
+def test_create_job_from_documents_rejects_empty_context_docs(tmp_path: Path) -> None:
+    manager = JobManager(tmp_path / "data")
+
+    try:
+        manager.create_job_from_documents("- [ ] task\n", " ", "report\n", {})
+    except PlanError as exc:
+        assert "HANDOFF.md" in str(exc)
+    else:
+        raise AssertionError("expected PlanError")
+
+
 def test_planning_and_revision_stay_awaiting_start(tmp_path: Path) -> None:
     fake_codex = make_fake_codex(tmp_path / "fake_codex.py")
     manager = JobManager(tmp_path / "data", codex_bin=f'"{sys.executable}" "{fake_codex}"')
