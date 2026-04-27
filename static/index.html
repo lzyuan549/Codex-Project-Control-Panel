@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codex Plan Runner</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section id="loginView" class="login-panel" hidden>
+        <div class="brand-mark">CPR</div>
+        <h1>Codex Plan Runner</h1>
+        <p>上传基础项目，先规划，再执行。</p>
+        <form id="loginForm" class="stack">
+          <label>
+            管理密码
+            <input id="passwordInput" type="password" autocomplete="current-password" placeholder="输入 ADMIN_PASSWORD" />
+          </label>
+          <button type="submit">进入控制台</button>
+        </form>
+        <p id="loginError" class="error-line"></p>
+      </section>
+
+      <section id="appView" class="dashboard" hidden>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Docker Web 控制台</p>
+            <h1>Codex Plan Runner</h1>
+          </div>
+          <div class="top-actions">
+            <span id="gatewayBadge" class="badge">检查配置中</span>
+            <button id="logoutButton" class="ghost">退出</button>
+          </div>
+        </header>
+
+        <section class="status-strip">
+          <article>
+            <span>状态</span>
+            <strong id="stateValue">空闲</strong>
+          </article>
+          <article>
+            <span>剩余任务</span>
+            <strong id="pendingValue">0</strong>
+          </article>
+          <article>
+            <span>已完成</span>
+            <strong id="completedValue">0</strong>
+          </article>
+          <article>
+            <span>当前轮次</span>
+            <strong id="roundValue">0</strong>
+          </article>
+        </section>
+
+        <section class="grid">
+          <article class="panel upload-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">输入</p>
+                <h2>基础项目与题目</h2>
+              </div>
+            </div>
+            <form id="uploadForm" class="stack">
+              <label>
+                项目题目
+                <textarea id="projectGoalInput" rows="4" placeholder="校园综合服务网页，课程表/失物/二手/公告等全整合，适配手机端"></textarea>
+              </label>
+              <label class="file-drop">
+                <input id="projectZipInput" type="file" name="project_zip" accept=".zip" />
+                <span>基础项目 ZIP</span>
+                <small id="projectZipName">可上传 auth-only.zip 或包含 auth-only/README.md 的项目 ZIP</small>
+              </label>
+              <label class="file-drop secondary">
+                <input id="constraintsInput" type="file" name="constraints" accept=".md,.txt" multiple />
+                <span>constraints/</span>
+                <small id="constraintsName">可多选 .md / .txt 约束文件</small>
+              </label>
+              <div class="button-row">
+                <button id="uploadButton" type="submit">上传项目</button>
+                <button id="planButton" type="button" class="accent">生成规划</button>
+                <button id="startButton" type="button" class="accent">开始执行</button>
+                <button id="stopButton" type="button" class="danger">停止</button>
+              </div>
+            </form>
+            <p id="uploadMessage" class="muted-line"></p>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">最近输出</p>
+                <h2>Codex 最终消息</h2>
+              </div>
+            </div>
+            <pre id="lastMessage" class="message-box">等待运行。</pre>
+          </article>
+        </section>
+
+        <section class="panel planning-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">规划</p>
+              <h2>状态文档</h2>
+            </div>
+            <div class="tab-row">
+              <button id="planDocTab" class="history-tab active" type="button">PLAN.md</button>
+              <button id="handoffDocTab" class="history-tab" type="button">HANDOFF.md</button>
+              <button id="testReportDocTab" class="history-tab" type="button">TEST_REPORT.md</button>
+            </div>
+          </div>
+          <pre id="documentBox" class="message-box document-box">等待生成规划。</pre>
+          <div class="revision-box">
+            <label>
+              规划反馈
+              <textarea id="revisionFeedbackInput" rows="4" placeholder="例如：课程表要拆成后台导入和学生端查看；二手交易需要审核流程。"></textarea>
+            </label>
+            <button id="revisePlanButton" type="button" class="accent">调整规划</button>
+          </div>
+        </section>
+
+        <section class="grid lower-grid">
+          <article class="panel logs-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">执行记录</p>
+                <h2>轮次日志</h2>
+              </div>
+              <button id="refreshLogsButton" class="ghost">刷新</button>
+            </div>
+            <div id="logsList" class="logs-list"></div>
+          </article>
+
+          <article class="panel files-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">产物</p>
+                <h2>工作区文件</h2>
+              </div>
+              <a id="downloadLink" class="download-link" href="/api/files/download">下载 ZIP</a>
+            </div>
+            <div id="filesList" class="files-list"></div>
+          </article>
+        </section>
+
+        <section class="panel history-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Archive</p>
+              <h2>历史记录</h2>
+            </div>
+            <button id="refreshHistoryButton" class="ghost">刷新历史</button>
+          </div>
+          <div class="history-layout">
+            <div id="historyList" class="history-list"></div>
+            <div class="history-detail">
+              <div class="history-toolbar">
+                <div>
+                  <strong id="historyTitle">未选择历史任务</strong>
+                  <small id="historyMeta">选择左侧记录查看文档、日志和产物。</small>
+                </div>
+                <a id="historyDownloadLink" class="download-link disabled-link" href="#">下载 ZIP</a>
+              </div>
+              <div class="tab-row">
+                <button id="historyPlanTab" class="history-tab active" type="button">PLAN.md</button>
+                <button id="historyHandoffTab" class="history-tab" type="button">HANDOFF.md</button>
+                <button id="historyTestReportTab" class="history-tab" type="button">TEST_REPORT.md</button>
+                <button id="historyLogsTab" class="history-tab" type="button">轮次日志</button>
+                <button id="historyFilesTab" class="history-tab" type="button">工作区文件</button>
+              </div>
+              <p id="historyNotice" class="muted-line"></p>
+              <pre id="historyDocumentBox" class="message-box history-view">等待选择历史任务。</pre>
+              <div id="historyLogsList" class="logs-list history-view" hidden></div>
+              <div id="historyFilesList" class="files-list history-view" hidden></div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,28 @@
+name: codex-plan-runner
+
+services:
+  codex-plan-runner:
+    build:
+      context: .
+      args:
+        BASE_IMAGE: "${BASE_IMAGE:-m.daocloud.io/docker.io/library/node:22-bookworm-slim}"
+        APT_MIRROR: "${APT_MIRROR:-http://mirrors.tuna.tsinghua.edu.cn/debian}"
+        APT_SECURITY_MIRROR: "${APT_SECURITY_MIRROR:-http://mirrors.tuna.tsinghua.edu.cn/debian-security}"
+        PIP_INDEX_URL: "${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
+        PIP_TRUSTED_HOST: "${PIP_TRUSTED_HOST:-mirrors.aliyun.com}"
+        NPM_REGISTRY: "${NPM_REGISTRY:-https://registry.npmmirror.com}"
+    container_name: codex-plan-runner
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-change-me-now}"
+      SESSION_SECRET: "${SESSION_SECRET:-change-this-session-secret}"
+      CODEX_GATEWAY_BASE_URL: "${CODEX_GATEWAY_BASE_URL:-}"
+      CODEX_GATEWAY_API_KEY: "${CODEX_GATEWAY_API_KEY:-}"
+      CODEX_MODEL: "${CODEX_MODEL:-gpt-5.5}"
+    volumes:
+      - codex_plan_data:/data
+
+volumes:
+  codex_plan_data:
