@@ -11,6 +11,8 @@ export CODEX_GATEWAY_BASE_URL='https://your-gateway.example.com/v1'
 export CODEX_GATEWAY_API_KEY='your-gateway-key'
 export CODEX_MODEL='your-model-name'
 export CODEX_RUN_TIMEOUT_SECONDS='7200'
+export HOST_WORKSPACE_ROOT='/www/wwwroot'
+export WORKSPACE_ROOT='/www/wwwroot'
 
 docker compose up -d --build
 ```
@@ -42,24 +44,26 @@ docker compose build --no-cache
 
 1. 上传基础项目 ZIP。通常是 `auth-only.zip`，或一个包含 `auth-only/README.md` 的现有项目 ZIP。
 2. 填写项目题目，例如“校园综合服务网页，课程表/失物/二手/公告等全整合，适配手机端”。
-3. 可选上传 `constraints/*.md` 或 `constraints/*.txt`。
-4. 点击“生成规划”，等待 `PLAN.md` 预览。
-5. 如果规划不合适，在反馈框输入修改意见，点击“调整规划”。
-6. 满意后点击“开始执行”，Codex 会按 `PLAN.md` 每轮最多推进 10 个未完成项。
+3. 可选填写工作区文件夹名；留空会在 `/www/wwwroot/` 下自动新建 `codex-<job_id>`。
+4. 可选上传 `constraints/*.md` 或 `constraints/*.txt`。
+5. 点击“生成规划”，等待 `PLAN.md` 预览。
+6. 如果规划不合适，在反馈框输入修改意见，点击“调整规划”。
+7. 满意后点击“开始执行”，Codex 会按 `PLAN.md` 每轮最多推进 10 个未完成项。
 
 ### 导入执行文档后执行
 
 1. 切换到“导入文档”模式。
 2. 上传已有的 `PLAN.md`、`HANDOFF.md`、`TEST_REPORT.md`。
-3. 可选上传基础项目 ZIP 和 `constraints/*.md` / `constraints/*.txt`。
-4. 点击“导入文档”，任务会直接进入“等待开始”状态。
-5. 点击“开始执行”，Codex 会跳过规划阶段，直接按上传的 `PLAN.md` 执行。
+3. 可选填写工作区文件夹名；留空会在 `/www/wwwroot/` 下自动新建 `codex-<job_id>`。
+4. 可选上传基础项目 ZIP 和 `constraints/*.md` / `constraints/*.txt`。
+5. 点击“导入文档”，任务会直接进入“等待开始”状态。
+6. 点击“开始执行”，Codex 会跳过规划阶段，直接按上传的 `PLAN.md` 执行。
 
 `auth-only` 只作为基础权限模板或复用来源，最终开发仍应落到 `frontend/`、`backend/`、`db/`。
 
 ## 运行逻辑
 
-- 每次上传都会创建一个新的 workspace。
+- 每次上传都会创建一个新的 workspace，实际执行目录默认位于 `/www/wwwroot/<workspace-name>`。
 - 原始 ZIP、项目题目和约束文件会保存到 `inputs/`。
 - 导入执行文档模式会把三份原始文档也保存到 `inputs/`，并覆盖 workspace 中的同名文档。
 - 程序会在 workspace 中执行 `git init`。
@@ -75,6 +79,8 @@ codex exec --dangerously-bypass-approvals-and-sandbox -C <workspace> --json -o <
 
 Codex 配置在容器启动时写入 `~/.codex/config.toml`，使用 `CODEX_GATEWAY_BASE_URL`、`CODEX_GATEWAY_API_KEY` 和 `CODEX_MODEL`。
 单轮 `codex exec` 默认最多运行 7200 秒，可通过 `CODEX_RUN_TIMEOUT_SECONDS` 调整；超时或点击停止时会清理对应进程组，避免长期服务或卡住的子进程残留。
+
+`WORKSPACE_ROOT` 是容器内工作区根目录，默认 `/www/wwwroot`。`HOST_WORKSPACE_ROOT` 是宿主机挂载目录，默认同样为 `/www/wwwroot`；在宝塔等服务器上可直接使用默认值。页面填写的工作区文件夹名只能是 `/www/wwwroot` 下的新建单层目录名，不能复用已有目录。
 
 ## 常见故障处理
 

@@ -77,6 +77,7 @@ def wait_for_state(client: TestClient, expected: str, timeout: float = 5.0) -> d
 def test_login_upload_plan_revise_execute_history_and_download(tmp_path: Path, monkeypatch) -> None:
     fake_codex = make_fake_codex(tmp_path / "fake_codex.py")
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("WORKSPACE_ROOT", str(tmp_path / "wwwroot"))
     monkeypatch.setenv("ADMIN_PASSWORD", "secret")
     monkeypatch.setenv("SESSION_SECRET", "test-secret")
     monkeypatch.setenv("CODEX_BIN", f'"{sys.executable}" "{fake_codex}"')
@@ -89,9 +90,19 @@ def test_login_upload_plan_revise_execute_history_and_download(tmp_path: Path, m
 
         ok = client.post("/api/login", json={"password": "secret"})
         assert ok.status_code == 200
+        session = client.get("/api/session")
+        assert session.status_code == 200
+        assert session.json()["workspace_root"] == str(tmp_path / "wwwroot")
 
         early_start = client.post("/api/job/start", json={})
         assert early_start.status_code == 400
+
+        bad_workspace = client.post(
+            "/api/upload",
+            data={"project_goal": "校园综合服务网页", "workspace_name": "../bad"},
+            files={"project_zip": ("auth-only.zip", make_zip({"auth-only/README.md": "# 基础权限\n"}), "application/zip")},
+        )
+        assert bad_workspace.status_code == 400
 
         files = {
             "project_zip": ("auth-only.zip", make_zip({"auth-only/README.md": "# 基础权限\n"}), "application/zip"),
@@ -99,12 +110,16 @@ def test_login_upload_plan_revise_execute_history_and_download(tmp_path: Path, m
         }
         uploaded = client.post(
             "/api/upload",
-            data={"project_goal": "校园综合服务网页，课程表/失物/二手/公告等全整合，适配手机端"},
+            data={
+                "project_goal": "校园综合服务网页，课程表/失物/二手/公告等全整合，适配手机端",
+                "workspace_name": "campus-web",
+            },
             files=files,
         )
         assert uploaded.status_code == 200
         job_id = uploaded.json()["job"]["id"]
         assert uploaded.json()["job"]["state"] == "uploaded"
+        assert uploaded.json()["job"]["workspace_path"] == str(tmp_path / "wwwroot" / "campus-web")
 
         status = client.get("/api/job/status")
         assert status.status_code == 200
@@ -185,6 +200,7 @@ def test_login_upload_plan_revise_execute_history_and_download(tmp_path: Path, m
 def test_document_import_uploads_and_starts_without_planning(tmp_path: Path, monkeypatch) -> None:
     fake_codex = make_fake_codex(tmp_path / "fake_codex.py")
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("WORKSPACE_ROOT", str(tmp_path / "wwwroot"))
     monkeypatch.setenv("ADMIN_PASSWORD", "secret")
     monkeypatch.setenv("SESSION_SECRET", "test-secret")
     monkeypatch.setenv("CODEX_BIN", f'"{sys.executable}" "{fake_codex}"')
@@ -207,12 +223,17 @@ def test_document_import_uploads_and_starts_without_planning(tmp_path: Path, mon
             ),
             ("constraints", ("rules.txt", b"keep it tidy\n", "text/plain")),
         ]
-        uploaded = client.post("/api/upload-documents", data={"project_goal": "直接导入"}, files=files)
+        uploaded = client.post(
+            "/api/upload-documents",
+            data={"project_goal": "直接导入", "workspace_name": "direct-docs"},
+            files=files,
+        )
 
         assert uploaded.status_code == 200
         job_id = uploaded.json()["job"]["id"]
         assert uploaded.json()["job"]["state"] == "awaiting_start"
         assert uploaded.json()["job"]["pending_tasks"] == 2
+        assert uploaded.json()["job"]["workspace_path"] == str(tmp_path / "wwwroot" / "direct-docs")
 
         plan_doc = client.get("/api/documents/plan")
         assert plan_doc.status_code == 200
@@ -233,6 +254,7 @@ def test_document_import_uploads_and_starts_without_planning(tmp_path: Path, mon
 
 def test_document_import_rejects_invalid_documents(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("WORKSPACE_ROOT", str(tmp_path / "wwwroot"))
     monkeypatch.setenv("ADMIN_PASSWORD", "secret")
     monkeypatch.setenv("SESSION_SECRET", "test-secret")
 
@@ -322,6 +344,7 @@ def test_prompt_templates_can_be_viewed_and_updated(tmp_path: Path, monkeypatch)
     )
     monkeypatch.setattr("app.main.PROMPT_TEMPLATE_DIR", prompt_dir)
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("WORKSPACE_ROOT", str(tmp_path / "wwwroot"))
     monkeypatch.setenv("ADMIN_PASSWORD", "secret")
     monkeypatch.setenv("SESSION_SECRET", "test-secret")
 

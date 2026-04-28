@@ -22,8 +22,10 @@ services:
       CODEX_GATEWAY_API_KEY: "${CODEX_GATEWAY_API_KEY:-}"
       CODEX_MODEL: "${CODEX_MODEL:-gpt-5.5}"
       CODEX_RUN_TIMEOUT_SECONDS: "${CODEX_RUN_TIMEOUT_SECONDS:-7200}"
+      WORKSPACE_ROOT: "${WORKSPACE_ROOT:-/www/wwwroot}"
     volumes:
       - codex_plan_data:/data
+      - "${HOST_WORKSPACE_ROOT:-/www/wwwroot}:${WORKSPACE_ROOT:-/www/wwwroot}"
 
 volumes:
   codex_plan_data:

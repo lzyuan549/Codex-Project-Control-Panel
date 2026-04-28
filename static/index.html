@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Codex Plan Runner</title>
-    <link rel="stylesheet" href="/static/styles.css?v=prompt-editor-20260428" />
+    <link rel="stylesheet" href="/static/styles.css?v=workspace-root-20260429" />
   </head>
   <body>
     <main class="shell">
@@ -69,6 +69,11 @@
               <label>
                 项目题目
                 <textarea id="projectGoalInput" rows="4" placeholder="校园综合服务网页，课程表/失物/二手/公告等全整合，适配手机端"></textarea>
+              </label>
+              <label class="workspace-field">
+                工作区文件夹
+                <input id="workspaceNameInput" type="text" autocomplete="off" placeholder="留空自动生成 codex-任务ID" />
+                <small>目标根目录：<span id="workspaceRootValue">/www/wwwroot</span></small>
               </label>
               <label class="file-drop">
                 <input id="projectZipInput" type="file" name="project_zip" accept=".zip" />
@@ -228,6 +233,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=prompt-editor-20260428"></script>
+    <script src="/static/app.js?v=workspace-root-20260429"></script>
   </body>
 </html>

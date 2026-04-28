@@ -10,6 +10,8 @@ const inputPanelTitle = document.querySelector("#inputPanelTitle");
 const uploadModePlan = document.querySelector("#uploadModePlan");
 const uploadModeDocuments = document.querySelector("#uploadModeDocuments");
 const projectGoalInput = document.querySelector("#projectGoalInput");
+const workspaceNameInput = document.querySelector("#workspaceNameInput");
+const workspaceRootValue = document.querySelector("#workspaceRootValue");
 const projectZipInput = document.querySelector("#projectZipInput");
 const projectZipName = document.querySelector("#projectZipName");
 const constraintsInput = document.querySelector("#constraintsInput");
@@ -168,6 +170,11 @@ function setUploadMode(mode) {
       ? "可选：给这次导入的执行任务起一个名字"
       : "校园综合服务网页，课程表/失物/二手/公告等全整合，适配手机端";
   updateProjectZipName();
+}
+
+function renderWorkspaceRoot(value) {
+  const workspaceRoot = value || "/www/wwwroot";
+  workspaceRootValue.textContent = workspaceRoot.replace(/[\\/]+$/, "");
 }
 
 function updateStatus(payload) {
@@ -407,7 +414,8 @@ async function loadHistoryDetail() {
   const data = await api(`/api/history/${encodeURIComponent(selectedHistoryId)}`);
   const job = data.job;
   historyTitle.textContent = `${formatTime(job.created_at)} · ${stateLabel(job.state)}`;
-  historyMeta.textContent = `剩余 ${job.pending_tasks ?? 0} / 完成 ${job.completed_tasks ?? 0} / 共 ${job.total_tasks ?? 0}，${job.round_count ?? 0} 轮`;
+  const workspaceText = job.workspace_path ? ` · ${job.workspace_path}` : "";
+  historyMeta.textContent = `剩余 ${job.pending_tasks ?? 0} / 完成 ${job.completed_tasks ?? 0} / 共 ${job.total_tasks ?? 0}，${job.round_count ?? 0} 轮${workspaceText}`;
   historyDownloadLink.href = `/api/history/${encodeURIComponent(selectedHistoryId)}/download`;
   historyDownloadLink.classList.remove("disabled-link");
   await showHistoryView(activeHistoryView);
@@ -542,6 +550,15 @@ uploadForm.addEventListener("submit", async (event) => {
 
   const form = new FormData();
   form.append("project_goal", projectGoalInput.value.trim());
+  const rawWorkspaceName = workspaceNameInput.value;
+  const workspaceName = rawWorkspaceName.trim();
+  if (rawWorkspaceName && !workspaceName) {
+    uploadMessage.textContent = "工作区文件夹不能只包含空格。";
+    return;
+  }
+  if (workspaceName) {
+    form.append("workspace_name", workspaceName);
+  }
   if (projectZipInput.files[0]) {
     form.append("project_zip", projectZipInput.files[0]);
   }
@@ -555,8 +572,9 @@ uploadForm.addEventListener("submit", async (event) => {
   }
 
   try {
-    await api(importingDocuments ? "/api/upload-documents" : "/api/upload", { method: "POST", body: form });
-    uploadMessage.textContent = importingDocuments ? "文档已导入，可开始执行。" : "上传完成，可以生成规划。";
+    const data = await api(importingDocuments ? "/api/upload-documents" : "/api/upload", { method: "POST", body: form });
+    const workspaceText = data.job && data.job.workspace_path ? ` 工作区：${data.job.workspace_path}` : "";
+    uploadMessage.textContent = importingDocuments ? `文档已导入，可开始执行。${workspaceText}` : `上传完成，可以生成规划。${workspaceText}`;
     await refreshStatus();
     if (importingDocuments) {
       setActiveDocument("plan");
@@ -640,6 +658,7 @@ async function bootstrap() {
     const session = await api("/api/session");
     gatewayBadge.textContent = session.gateway_configured ? `模型 ${session.model}` : "网关未完整配置";
     gatewayBadge.style.color = session.gateway_configured ? "#075e55" : "#b23b3b";
+    renderWorkspaceRoot(session.workspace_root);
     showApp();
   } catch {
     showLogin();

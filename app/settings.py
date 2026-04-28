@@ -9,6 +9,7 @@ from pathlib import Path
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path
+    workspace_root: Path
     admin_password: str
     session_secret: str
     gateway_base_url: str
@@ -24,6 +25,7 @@ class Settings:
 def load_settings() -> Settings:
     return Settings(
         data_dir=Path(os.getenv("DATA_DIR", "/data")).resolve(),
+        workspace_root=Path(os.getenv("WORKSPACE_ROOT", "/www/wwwroot")).resolve(),
         admin_password=os.getenv("ADMIN_PASSWORD", "admin"),
         session_secret=os.getenv("SESSION_SECRET", secrets.token_urlsafe(32)),
         gateway_base_url=os.getenv("CODEX_GATEWAY_BASE_URL", "").rstrip("/"),

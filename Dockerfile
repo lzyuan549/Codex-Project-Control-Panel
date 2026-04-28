@@ -7,6 +7,7 @@ ARG PIP_TRUSTED_HOST=mirrors.aliyun.com
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DATA_DIR=/data \
+    WORKSPACE_ROOT=/www/wwwroot \
     HOST=0.0.0.0 \
     PORT=8000 \
     PIP_INDEX_URL=${PIP_INDEX_URL} \
@@ -35,7 +36,7 @@ RUN python3 -m pip install --break-system-packages --no-cache-dir -r /app/requir
 COPY app /app/app
 COPY static /app/static
 
-RUN mkdir -p /data
+RUN mkdir -p /data /www/wwwroot
 VOLUME ["/data"]
 EXPOSE 8000
 

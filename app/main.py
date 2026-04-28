@@ -139,13 +139,18 @@ async def read_constraint_uploads(constraints: list[UploadFile] | None) -> dict[
 async def lifespan(fastapi_app: FastAPI):
     settings = load_settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    settings.workspace_root.mkdir(parents=True, exist_ok=True)
     write_codex_config(settings)
     fastapi_app.state.settings = settings
     fastapi_app.state.auth_config = AuthConfig(
         admin_password=settings.admin_password,
         session_secret=settings.session_secret,
     )
-    fastapi_app.state.job_manager = JobManager(settings.data_dir, codex_bin=settings.codex_bin)
+    fastapi_app.state.job_manager = JobManager(
+        settings.data_dir,
+        codex_bin=settings.codex_bin,
+        workspace_root=settings.workspace_root,
+    )
     yield
 
 
@@ -181,6 +186,7 @@ async def session(_: None = Depends(require_session)) -> dict:
         "gateway_configured": settings.gateway_configured,
         "model": settings.codex_model,
         "base_url": settings.gateway_base_url,
+        "workspace_root": str(settings.workspace_root),
     }
 
 
@@ -215,6 +221,7 @@ async def update_prompt_template(
 async def upload(
     project_zip: UploadFile = File(...),
     project_goal: str = Form(...),
+    workspace_name: str | None = Form(None),
     constraints: list[UploadFile] | None = File(None),
     _: None = Depends(require_session),
 ) -> dict:
@@ -230,6 +237,7 @@ async def upload(
             project_zip.filename or "project.zip",
             project_goal,
             constraint_map,
+            workspace_name=workspace_name,
         )
     except PlanError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -243,6 +251,7 @@ async def upload_documents(
     test_report: UploadFile | None = File(None),
     project_zip: UploadFile | None = File(None),
     project_goal: str = Form(""),
+    workspace_name: str | None = Form(None),
     constraints: list[UploadFile] | None = File(None),
     _: None = Depends(require_session),
 ) -> dict:
@@ -270,6 +279,7 @@ async def upload_documents(
             project_zip=project_zip_bytes,
             project_zip_filename=project_zip_filename,
             project_goal=project_goal,
+            workspace_name=workspace_name,
         )
     except PlanError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

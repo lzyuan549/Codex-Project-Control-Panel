@@ -110,6 +110,7 @@ class Job:
             "id": self.id,
             "state": self.state,
             "project_goal": self.project_goal,
+            "workspace_path": str(self.workspace_dir),
             "created_at": self.created_at,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
@@ -354,9 +355,16 @@ async def terminate_process_tree(process: asyncio.subprocess.Process, timeout: f
 
 
 class JobManager:
-    def __init__(self, data_dir: Path, codex_bin: str = "codex", batch_size: int = 10) -> None:
+    def __init__(
+        self,
+        data_dir: Path,
+        codex_bin: str = "codex",
+        batch_size: int = 10,
+        workspace_root: Path | None = None,
+    ) -> None:
         self.data_dir = data_dir
         self.jobs_dir = data_dir / "jobs"
+        self.workspace_root = (workspace_root or Path(os.getenv("WORKSPACE_ROOT", "/www/wwwroot"))).resolve()
         self.codex_command = shlex.split(codex_bin)
         self.batch_size = batch_size
         self.codex_run_timeout_seconds = positive_int_from_env(
@@ -365,6 +373,42 @@ class JobManager:
         )
         self.current_job: Job | None = None
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
+        self.workspace_root.mkdir(parents=True, exist_ok=True)
+
+    def workspace_dir_from_metadata(self, job_dir: Path, metadata: Mapping[str, object]) -> Path:
+        raw_path = metadata.get("workspace_path")
+        if raw_path:
+            path = Path(str(raw_path))
+            return path if path.is_absolute() else (job_dir / path).resolve()
+        return job_dir / "workspace"
+
+    def workspace_name_for_job(self, workspace_name: str | None, job_id: str) -> str:
+        if workspace_name is None or workspace_name == "":
+            return f"codex-{job_id}"
+
+        cleaned = workspace_name.strip()
+        if not cleaned:
+            raise PlanError("Workspace folder name must not be blank.")
+        if cleaned in {".", ".."} or ".." in cleaned:
+            raise PlanError("Workspace folder name must not contain '..'.")
+        if any(separator in cleaned for separator in ("/", "\\")):
+            raise PlanError("Workspace folder name must be a single folder name.")
+        if ":" in cleaned or any(ord(character) < 32 for character in cleaned):
+            raise PlanError("Workspace folder name contains invalid characters.")
+        if Path(cleaned).is_absolute() or PurePosixPath(cleaned).is_absolute():
+            raise PlanError("Workspace folder name must not be an absolute path.")
+        return cleaned
+
+    def allocate_workspace_dir(self, job_id: str, workspace_name: str | None = None) -> Path:
+        folder_name = self.workspace_name_for_job(workspace_name, job_id)
+        workspace_dir = (self.workspace_root / folder_name).resolve()
+        try:
+            workspace_dir.relative_to(self.workspace_root)
+        except ValueError as exc:
+            raise PlanError("Workspace folder must stay under the workspace root.") from exc
+        if workspace_dir.exists():
+            raise PlanError(f"Workspace folder '{folder_name}' already exists.")
+        return workspace_dir
 
     def create_job_from_zip(
         self,
@@ -372,6 +416,7 @@ class JobManager:
         filename: str,
         project_goal: str,
         constraints: Mapping[str, str],
+        workspace_name: str | None = None,
     ) -> Job:
         if self.current_job and self.current_job.state in {"planning", "revising", "running", "stopping"}:
             raise PlanError("A job is already active.")
@@ -382,7 +427,7 @@ class JobManager:
 
         job_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
         job_dir = self.jobs_dir / job_id
-        workspace_dir = job_dir / "workspace"
+        workspace_dir = self.allocate_workspace_dir(job_id, workspace_name)
         logs_dir = job_dir / "logs"
         constraints_dir = workspace_dir / "constraints"
         inputs_dir = job_dir / "inputs"
@@ -412,11 +457,16 @@ class JobManager:
         self.save_job_metadata(job)
         return job
 
-    def create_job_from_content(self, plan_text: str, constraints: Mapping[str, str]) -> Job:
+    def create_job_from_content(
+        self,
+        plan_text: str,
+        constraints: Mapping[str, str],
+        workspace_name: str | None = None,
+    ) -> Job:
         tasks = require_valid_plan(plan_text)
         job_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
         job_dir = self.jobs_dir / job_id
-        workspace_dir = job_dir / "workspace"
+        workspace_dir = self.allocate_workspace_dir(job_id, workspace_name)
         logs_dir = job_dir / "logs"
         constraints_dir = workspace_dir / "constraints"
         inputs_dir = job_dir / "inputs"
@@ -457,6 +507,7 @@ class JobManager:
         project_zip: bytes | None = None,
         project_zip_filename: str = "project.zip",
         project_goal: str = "",
+        workspace_name: str | None = None,
     ) -> Job:
         if self.current_job and self.current_job.state in {"planning", "revising", "running", "stopping"}:
             raise PlanError("A job is already active.")
@@ -470,7 +521,7 @@ class JobManager:
         cleaned_goal = project_goal.strip() or "Imported execution documents"
         job_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
         job_dir = self.jobs_dir / job_id
-        workspace_dir = job_dir / "workspace"
+        workspace_dir = self.allocate_workspace_dir(job_id, workspace_name)
         logs_dir = job_dir / "logs"
         constraints_dir = workspace_dir / "constraints"
         inputs_dir = job_dir / "inputs"
@@ -939,10 +990,10 @@ class JobManager:
 
     def history_record_for_dir(self, job_dir: Path) -> dict:
         job_id = job_dir.name
-        workspace_dir = job_dir / "workspace"
         logs_dir = job_dir / "logs"
         inputs_dir = job_dir / "inputs"
         metadata = read_json_file(job_dir / "job.json")
+        workspace_dir = self.workspace_dir_from_metadata(job_dir, metadata)
         created_at = float(metadata.get("created_at") or parse_job_created_at(job_id, job_dir.stat().st_mtime))
         state = str(metadata.get("state") or "legacy")
         failure_reason = metadata.get("failure_reason")
@@ -968,6 +1019,7 @@ class JobManager:
 
         if self.current_job and self.current_job.id == job_id:
             live = self.current_job.to_dict()
+            workspace_dir = self.current_job.workspace_dir
             state = live["state"]
             created_at = live["created_at"]
             failure_reason = live["failure_reason"]
@@ -983,6 +1035,7 @@ class JobManager:
             "id": job_id,
             "state": state,
             "project_goal": project_goal,
+            "workspace_path": str(workspace_dir),
             "created_at": created_at,
             "started_at": metadata.get("started_at"),
             "finished_at": metadata.get("finished_at"),
@@ -1023,8 +1076,9 @@ class JobManager:
 
     def history_document(self, job_id: str, document_name: str) -> dict:
         job_dir = self.validate_history_job_id(job_id)
+        metadata = read_json_file(job_dir / "job.json")
         filename = validate_document_name(document_name)
-        workspace_dir = job_dir / "workspace"
+        workspace_dir = self.workspace_dir_from_metadata(job_dir, metadata)
         path = workspace_dir / filename
         if document_name == "plan" and not path.exists():
             path = workspace_dir / "plan.md"
@@ -1053,11 +1107,13 @@ class JobManager:
 
     def history_file_tree(self, job_id: str) -> list[dict]:
         job_dir = self.validate_history_job_id(job_id)
-        return self.file_tree_for_workspace(job_dir / "workspace")
+        metadata = read_json_file(job_dir / "job.json")
+        return self.file_tree_for_workspace(self.workspace_dir_from_metadata(job_dir, metadata))
 
     def build_history_workspace_zip(self, job_id: str) -> Path:
         job_dir = self.validate_history_job_id(job_id)
-        return self.build_zip_for_workspace(job_id, job_dir / "workspace")
+        metadata = read_json_file(job_dir / "job.json")
+        return self.build_zip_for_workspace(job_id, self.workspace_dir_from_metadata(job_dir, metadata))
 
     def clear_all_jobs(self) -> None:
         if self.current_job and self.current_job.state in {"planning", "revising", "running", "stopping"}:

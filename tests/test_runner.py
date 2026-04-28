@@ -75,7 +75,8 @@ def test_parse_plan_tasks_and_batch() -> None:
 
 
 def test_create_job_from_zip_extracts_auth_only_and_constraints(tmp_path: Path) -> None:
-    manager = JobManager(tmp_path / "data")
+    workspace_root = tmp_path / "wwwroot"
+    manager = JobManager(tmp_path / "data", workspace_root=workspace_root)
     job = manager.create_job_from_zip(
         make_zip(
             {
@@ -87,18 +88,22 @@ def test_create_job_from_zip_extracts_auth_only_and_constraints(tmp_path: Path) 
         "auth-only.zip",
         "校园综合服务网页",
         {"rules.md": "# 规则\n"},
+        workspace_name="campus-service",
     )
 
     assert job.state == "uploaded"
     assert job.project_goal == "校园综合服务网页"
+    assert job.workspace_dir == workspace_root / "campus-service"
+    assert job.to_dict()["workspace_path"] == str(workspace_root / "campus-service")
     assert (job.workspace_dir / "auth-only" / "README.md").exists()
     assert not (job.workspace_dir / "auth-only" / "node_modules" / "ignored.js").exists()
     assert (job.constraints_dir / "rules.md").exists()
     assert (job.inputs_dir / "source.zip").exists()
+    assert manager.history_detail(job.id)["workspace_path"] == str(workspace_root / "campus-service")
 
 
 def test_create_job_from_zip_rejects_empty_goal_and_unsafe_zip(tmp_path: Path) -> None:
-    manager = JobManager(tmp_path / "data")
+    manager = JobManager(tmp_path / "data", workspace_root=tmp_path / "wwwroot")
 
     try:
         manager.create_job_from_zip(make_zip({"README.md": "# ok\n"}), "project.zip", " ", {})
@@ -115,8 +120,46 @@ def test_create_job_from_zip_rejects_empty_goal_and_unsafe_zip(tmp_path: Path) -
         raise AssertionError("expected PlanError")
 
 
+def test_workspace_name_defaults_and_rejects_unsafe_names(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "wwwroot"
+    manager = JobManager(tmp_path / "data", workspace_root=workspace_root)
+
+    job = manager.create_job_from_content("- [ ] task\n", {})
+    assert job.workspace_dir.parent == workspace_root
+    assert job.workspace_dir.name == f"codex-{job.id}"
+
+    for unsafe_name in ["   ", "../x", "a/b", "a\\b", "/abs", "bad..name", "C:drive"]:
+        try:
+            manager.create_job_from_zip(
+                make_zip({"README.md": "# ok\n"}),
+                "project.zip",
+                "校园综合服务网页",
+                {},
+                workspace_name=unsafe_name,
+            )
+        except PlanError:
+            pass
+        else:
+            raise AssertionError(f"expected PlanError for {unsafe_name!r}")
+
+    (workspace_root / "taken").mkdir()
+    try:
+        manager.create_job_from_zip(
+            make_zip({"README.md": "# ok\n"}),
+            "project.zip",
+            "校园综合服务网页",
+            {},
+            workspace_name="taken",
+        )
+    except PlanError as exc:
+        assert "already exists" in str(exc)
+    else:
+        raise AssertionError("expected PlanError")
+
+
 def test_create_job_from_documents_imports_docs_and_optional_zip(tmp_path: Path) -> None:
-    manager = JobManager(tmp_path / "data")
+    workspace_root = tmp_path / "wwwroot"
+    manager = JobManager(tmp_path / "data", workspace_root=workspace_root)
     plan = "# Imported Plan\n\n- [ ] direct task\n- [x] finished task\n"
     job = manager.create_job_from_documents(
         plan,
@@ -126,10 +169,12 @@ def test_create_job_from_documents_imports_docs_and_optional_zip(tmp_path: Path)
         project_zip=make_zip({"README.md": "# base\n", "PLAN.md": "# old\n- [ ] old task\n"}),
         project_zip_filename="base.zip",
         project_goal="  Direct import  ",
+        workspace_name="direct-import",
     )
 
     assert job.state == "awaiting_start"
     assert job.project_goal == "Direct import"
+    assert job.workspace_dir == workspace_root / "direct-import"
     assert job.total_tasks == 2
     assert job.pending_tasks == 1
     assert job.completed_tasks == 1
@@ -143,7 +188,7 @@ def test_create_job_from_documents_imports_docs_and_optional_zip(tmp_path: Path)
 
 
 def test_create_job_from_documents_rejects_empty_context_docs(tmp_path: Path) -> None:
-    manager = JobManager(tmp_path / "data")
+    manager = JobManager(tmp_path / "data", workspace_root=tmp_path / "wwwroot")
 
     try:
         manager.create_job_from_documents("- [ ] task\n", " ", "report\n", {})
@@ -153,9 +198,34 @@ def test_create_job_from_documents_rejects_empty_context_docs(tmp_path: Path) ->
         raise AssertionError("expected PlanError")
 
 
+def test_legacy_history_uses_job_workspace_when_metadata_has_no_workspace_path(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    job_id = "20260101-000000-abc12345"
+    workspace_dir = data_dir / "jobs" / job_id / "workspace"
+    workspace_dir.mkdir(parents=True)
+    (workspace_dir / "PLAN.md").write_text("- [ ] legacy task\n", encoding="utf-8")
+    (workspace_dir / "README.md").write_text("# legacy\n", encoding="utf-8")
+
+    manager = JobManager(data_dir, workspace_root=tmp_path / "wwwroot")
+
+    detail = manager.history_detail(job_id)
+    assert detail["workspace_path"] == str(workspace_dir)
+
+    document = manager.history_document(job_id, "plan")
+    assert document["available"] is True
+    assert "legacy task" in document["content"]
+
+    paths = {item["path"] for item in manager.history_file_tree(job_id)}
+    assert {"PLAN.md", "README.md"} <= paths
+
+
 def test_planning_and_revision_stay_awaiting_start(tmp_path: Path) -> None:
     fake_codex = make_fake_codex(tmp_path / "fake_codex.py")
-    manager = JobManager(tmp_path / "data", codex_bin=f'"{sys.executable}" "{fake_codex}"')
+    manager = JobManager(
+        tmp_path / "data",
+        codex_bin=f'"{sys.executable}" "{fake_codex}"',
+        workspace_root=tmp_path / "wwwroot",
+    )
     job = manager.create_job_from_zip(make_zip({"auth-only/README.md": "# auth\n"}), "auth-only.zip", "校园综合服务网页", {})
 
     asyncio.run(manager.run_planning_job(job))
@@ -173,7 +243,7 @@ def test_planning_and_revision_stay_awaiting_start(tmp_path: Path) -> None:
 
 
 def test_start_rejects_before_plan_is_generated(tmp_path: Path) -> None:
-    manager = JobManager(tmp_path / "data")
+    manager = JobManager(tmp_path / "data", workspace_root=tmp_path / "wwwroot")
     manager.create_job_from_zip(make_zip({"auth-only/README.md": "# auth\n"}), "auth-only.zip", "校园综合服务网页", {})
 
     try:
@@ -186,7 +256,11 @@ def test_start_rejects_before_plan_is_generated(tmp_path: Path) -> None:
 
 def test_fake_codex_execution_advances_ten_tasks_per_round(tmp_path: Path) -> None:
     fake_codex = make_fake_codex(tmp_path / "fake_codex.py")
-    manager = JobManager(tmp_path / "data", codex_bin=f'"{sys.executable}" "{fake_codex}"')
+    manager = JobManager(
+        tmp_path / "data",
+        codex_bin=f'"{sys.executable}" "{fake_codex}"',
+        workspace_root=tmp_path / "wwwroot",
+    )
     manager.create_job_from_content("\n".join(f"- [ ] task {i}" for i in range(12)), {})
 
     asyncio.run(manager.run_current_job())
@@ -219,7 +293,11 @@ print('{"event":"done"}')
 """,
         encoding="utf-8",
     )
-    manager = JobManager(tmp_path / "data", codex_bin=f'"{sys.executable}" "{fake_codex}"')
+    manager = JobManager(
+        tmp_path / "data",
+        codex_bin=f'"{sys.executable}" "{fake_codex}"',
+        workspace_root=tmp_path / "wwwroot",
+    )
     manager.create_job_from_content("- [ ] task 1\n- [ ] task 2\n", {})
 
     asyncio.run(manager.run_current_job())
@@ -242,7 +320,11 @@ time.sleep(30)
         encoding="utf-8",
     )
     monkeypatch.setenv("CODEX_RUN_TIMEOUT_SECONDS", "1")
-    manager = JobManager(tmp_path / "data", codex_bin=f'"{sys.executable}" "{fake_codex}"')
+    manager = JobManager(
+        tmp_path / "data",
+        codex_bin=f'"{sys.executable}" "{fake_codex}"',
+        workspace_root=tmp_path / "wwwroot",
+    )
     manager.create_job_from_content("- [ ] task 1\n", {})
 
     asyncio.run(manager.run_current_job())
