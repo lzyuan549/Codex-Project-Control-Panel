@@ -55,6 +55,14 @@ const historyNotice = document.querySelector("#historyNotice");
 const historyDocumentBox = document.querySelector("#historyDocumentBox");
 const historyLogsList = document.querySelector("#historyLogsList");
 const historyFilesList = document.querySelector("#historyFilesList");
+const promptTemplateTabs = Array.from(document.querySelectorAll("[data-prompt-template]"));
+const promptTemplateTitle = document.querySelector("#promptTemplateTitle");
+const promptTemplateMeta = document.querySelector("#promptTemplateMeta");
+const promptTemplateEditor = document.querySelector("#promptTemplateEditor");
+const promptPlaceholderList = document.querySelector("#promptPlaceholderList");
+const promptTemplateMessage = document.querySelector("#promptTemplateMessage");
+const refreshPromptTemplateButton = document.querySelector("#refreshPromptTemplateButton");
+const savePromptTemplateButton = document.querySelector("#savePromptTemplateButton");
 
 let authenticated = false;
 let pollTimer = null;
@@ -63,6 +71,9 @@ let selectedHistoryId = null;
 let activeDocument = "plan";
 let activeHistoryView = "plan";
 let uploadMode = "plan";
+let activePromptTemplate = "planning";
+let promptTemplates = [];
+let promptTemplateDirty = false;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -97,6 +108,7 @@ function showApp() {
   loginView.hidden = true;
   appView.hidden = false;
   startPolling();
+  refreshPromptTemplates();
 }
 
 function stateLabel(state) {
@@ -204,6 +216,81 @@ async function refreshFiles() {
   if (!authenticated) return;
   const data = await api("/api/files");
   renderFiles(filesList, data.files);
+}
+
+function currentPromptTemplate() {
+  return promptTemplates.find((template) => template.id === activePromptTemplate);
+}
+
+async function refreshPromptTemplates() {
+  if (!authenticated) return;
+  if (promptTemplateDirty && !window.confirm("当前提示词还没有保存，确定刷新吗？")) return;
+  promptTemplateMessage.textContent = "";
+  try {
+    const data = await api("/api/prompt-templates");
+    promptTemplates = data.templates;
+    if (!currentPromptTemplate() && promptTemplates.length) {
+      activePromptTemplate = promptTemplates[0].id;
+    }
+    renderPromptTemplate();
+  } catch (error) {
+    promptTemplateMessage.textContent = error.message;
+  }
+}
+
+function renderPromptTemplate() {
+  const template = currentPromptTemplate();
+  promptTemplateTabs.forEach((button) => {
+    button.classList.toggle("active", button.dataset.promptTemplate === activePromptTemplate);
+  });
+
+  if (!template) {
+    promptTemplateTitle.textContent = "未加载";
+    promptTemplateMeta.textContent = "没有可编辑的提示词模板";
+    promptTemplateEditor.value = "";
+    promptPlaceholderList.innerHTML = "";
+    return;
+  }
+
+  promptTemplateTitle.textContent = template.label;
+  promptTemplateMeta.textContent = `${template.filename} · ${formatSize(template.size || 0)} · ${formatTime(template.updated_at)}`;
+  promptTemplateEditor.value = template.content;
+  promptPlaceholderList.innerHTML = (template.required_placeholders || [])
+    .map((placeholder) => `<span>{{${escapeHtml(placeholder)}}}</span>`)
+    .join("");
+  promptTemplateDirty = false;
+}
+
+function selectPromptTemplate(templateId) {
+  if (templateId === activePromptTemplate) return;
+  if (promptTemplateDirty && !window.confirm("当前提示词还没有保存，确定切换吗？")) return;
+  activePromptTemplate = templateId;
+  promptTemplateMessage.textContent = "";
+  renderPromptTemplate();
+}
+
+async function savePromptTemplate() {
+  const template = currentPromptTemplate();
+  if (!template) return;
+  promptTemplateMessage.textContent = "";
+  savePromptTemplateButton.disabled = true;
+  try {
+    const data = await api(`/api/prompt-templates/${encodeURIComponent(activePromptTemplate)}`, {
+      method: "PUT",
+      body: JSON.stringify({ content: promptTemplateEditor.value }),
+    });
+    const index = promptTemplates.findIndex((item) => item.id === data.template.id);
+    if (index >= 0) {
+      promptTemplates[index] = data.template;
+    }
+    promptTemplateDirty = false;
+    renderPromptTemplate();
+    promptTemplateMessage.textContent = "已保存。";
+  } catch (error) {
+    promptTemplateMessage.textContent = error.message;
+  } finally {
+    savePromptTemplateButton.disabled = false;
+  }
 }
 
 function renderLogs(container, logs) {
@@ -415,6 +502,15 @@ logoutButton.addEventListener("click", async () => {
 
 uploadModePlan.addEventListener("click", () => setUploadMode("plan"));
 uploadModeDocuments.addEventListener("click", () => setUploadMode("documents"));
+promptTemplateTabs.forEach((button) => {
+  button.addEventListener("click", () => selectPromptTemplate(button.dataset.promptTemplate));
+});
+promptTemplateEditor.addEventListener("input", () => {
+  promptTemplateDirty = true;
+  promptTemplateMessage.textContent = "有未保存修改。";
+});
+refreshPromptTemplateButton.addEventListener("click", refreshPromptTemplates);
+savePromptTemplateButton.addEventListener("click", savePromptTemplate);
 projectZipInput.addEventListener("change", updateProjectZipName);
 planFileInput.addEventListener("change", () => setFileName(planFileInput, planFileName, "选择执行计划文档"));
 handoffFileInput.addEventListener("change", () => setFileName(handoffFileInput, handoffFileName, "选择交接文档"));

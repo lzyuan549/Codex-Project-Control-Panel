@@ -297,3 +297,59 @@ def test_document_import_rejects_invalid_documents(tmp_path: Path, monkeypatch) 
             ],
         )
         assert not_markdown.status_code == 400
+
+
+def test_prompt_templates_can_be_viewed_and_updated(tmp_path: Path, monkeypatch) -> None:
+    prompt_dir = tmp_path / "prompt_templates"
+    prompt_dir.mkdir()
+    (prompt_dir / "planning_prompt.md").write_text(
+        "PROMPT_STAGE: planning\n{{PROJECT_GOAL}}\n{{CONSTRAINTS}}\n{{WORKSPACE_FILES}}\n",
+        encoding="utf-8",
+    )
+    (prompt_dir / "revision_prompt.md").write_text(
+        (
+            "PROMPT_STAGE: revision\n"
+            "{{PROJECT_GOAL}}\n{{FEEDBACK}}\n{{PLAN_MD}}\n{{HANDOFF_MD}}\n{{TEST_REPORT_MD}}\n{{CONSTRAINTS}}\n"
+        ),
+        encoding="utf-8",
+    )
+    (prompt_dir / "continuation_prompt.md").write_text(
+        (
+            "PROMPT_STAGE: execution\n"
+            "{{PROJECT_GOAL}}\n{{SELECTED_BATCH}}\n{{PLAN_MD}}\n{{HANDOFF_MD}}\n{{TEST_REPORT_MD}}\n{{CONSTRAINTS}}\n"
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("app.main.PROMPT_TEMPLATE_DIR", prompt_dir)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("ADMIN_PASSWORD", "secret")
+    monkeypatch.setenv("SESSION_SECRET", "test-secret")
+
+    with TestClient(app) as client:
+        assert client.get("/api/prompt-templates").status_code == 401
+        assert client.post("/api/login", json={"password": "secret"}).status_code == 200
+
+        listing = client.get("/api/prompt-templates")
+        assert listing.status_code == 200
+        templates = listing.json()["templates"]
+        assert {template["id"] for template in templates} == {"planning", "revision", "execution"}
+        assert next(template for template in templates if template["id"] == "planning")["filename"] == "planning_prompt.md"
+
+        updated_content = (
+            "PROMPT_STAGE: planning\n"
+            "{{PROJECT_GOAL}}\n{{CONSTRAINTS}}\n{{WORKSPACE_FILES}}\n"
+            "请在规划里补充风险说明。\n"
+        )
+        updated = client.put("/api/prompt-templates/planning", json={"content": updated_content})
+        assert updated.status_code == 200
+        assert updated.json()["template"]["content"] == updated_content
+        assert (prompt_dir / "planning_prompt.md").read_text(encoding="utf-8") == updated_content
+
+        missing_placeholder = client.put(
+            "/api/prompt-templates/planning",
+            json={"content": "PROMPT_STAGE: planning\n{{PROJECT_GOAL}}\n"},
+        )
+        assert missing_placeholder.status_code == 400
+
+        invalid_template = client.get("/api/prompt-templates/unknown")
+        assert invalid_template.status_code == 404

@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .auth import AuthConfig, clear_session_cookie, require_session, set_session_cookie
-from .runner import JobManager, PlanError
+from .runner import JobManager, PlanError, PROMPT_TEMPLATE_DIR
 from .settings import load_settings, write_codex_config
 
 
@@ -23,6 +23,87 @@ class LoginRequest(BaseModel):
 
 class RevisionRequest(BaseModel):
     feedback: str
+
+
+class PromptTemplateUpdate(BaseModel):
+    content: str
+
+
+PROMPT_TEMPLATE_DEFINITIONS = {
+    "planning": {
+        "filename": "planning_prompt.md",
+        "label": "规划阶段",
+        "stage": "planning",
+        "required_placeholders": ["PROJECT_GOAL", "CONSTRAINTS", "WORKSPACE_FILES"],
+    },
+    "revision": {
+        "filename": "revision_prompt.md",
+        "label": "修订阶段",
+        "stage": "revision",
+        "required_placeholders": [
+            "PROJECT_GOAL",
+            "FEEDBACK",
+            "PLAN_MD",
+            "HANDOFF_MD",
+            "TEST_REPORT_MD",
+            "CONSTRAINTS",
+        ],
+    },
+    "execution": {
+        "filename": "continuation_prompt.md",
+        "label": "执行阶段",
+        "stage": "execution",
+        "required_placeholders": [
+            "PROJECT_GOAL",
+            "SELECTED_BATCH",
+            "PLAN_MD",
+            "HANDOFF_MD",
+            "TEST_REPORT_MD",
+            "CONSTRAINTS",
+        ],
+    },
+}
+
+
+def prompt_template_path(template_id: str) -> Path:
+    definition = PROMPT_TEMPLATE_DEFINITIONS.get(template_id)
+    if definition is None:
+        raise HTTPException(status_code=404, detail="Invalid prompt template.")
+    return PROMPT_TEMPLATE_DIR / definition["filename"]
+
+
+def prompt_template_payload(template_id: str) -> dict:
+    path = prompt_template_path(template_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Prompt template file does not exist.")
+    definition = PROMPT_TEMPLATE_DEFINITIONS[template_id]
+    stat = path.stat()
+    return {
+        "id": template_id,
+        "label": definition["label"],
+        "stage": definition["stage"],
+        "filename": definition["filename"],
+        "required_placeholders": definition["required_placeholders"],
+        "content": path.read_text(encoding="utf-8"),
+        "size": stat.st_size,
+        "updated_at": stat.st_mtime,
+    }
+
+
+def validate_prompt_template_content(template_id: str, content: str) -> None:
+    definition = PROMPT_TEMPLATE_DEFINITIONS[template_id]
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="Prompt template must not be empty.")
+    stage_marker = f"PROMPT_STAGE: {definition['stage']}"
+    if stage_marker not in content:
+        raise HTTPException(status_code=400, detail=f"Prompt template must include '{stage_marker}'.")
+    missing = [
+        "{{" + placeholder + "}}"
+        for placeholder in definition["required_placeholders"]
+        if "{{" + placeholder + "}}" not in content
+    ]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Missing required placeholders: {', '.join(missing)}.")
 
 
 async def read_text_upload(upload: UploadFile | None, label: str, *, require_content: bool = False) -> str:
@@ -101,6 +182,33 @@ async def session(_: None = Depends(require_session)) -> dict:
         "model": settings.codex_model,
         "base_url": settings.gateway_base_url,
     }
+
+
+@app.get("/api/prompt-templates")
+async def prompt_templates(_: None = Depends(require_session)) -> dict:
+    return {
+        "templates": [
+            prompt_template_payload(template_id)
+            for template_id in PROMPT_TEMPLATE_DEFINITIONS
+        ]
+    }
+
+
+@app.get("/api/prompt-templates/{template_id}")
+async def prompt_template(template_id: str, _: None = Depends(require_session)) -> dict:
+    return {"template": prompt_template_payload(template_id)}
+
+
+@app.put("/api/prompt-templates/{template_id}")
+async def update_prompt_template(
+    template_id: str,
+    payload: PromptTemplateUpdate,
+    _: None = Depends(require_session),
+) -> dict:
+    path = prompt_template_path(template_id)
+    validate_prompt_template_content(template_id, payload.content)
+    path.write_text(payload.content, encoding="utf-8")
+    return {"ok": True, "template": prompt_template_payload(template_id)}
 
 
 @app.post("/api/upload")

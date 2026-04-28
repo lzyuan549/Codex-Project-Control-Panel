@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Codex Plan Runner</title>
-    <link rel="stylesheet" href="/static/styles.css?v=document-import-20260427" />
+    <link rel="stylesheet" href="/static/styles.css?v=prompt-editor-20260428" />
   </head>
   <body>
     <main class="shell">
@@ -118,6 +118,35 @@
           </article>
         </section>
 
+        <section class="panel prompt-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Prompt</p>
+              <h2>Codex 提示词</h2>
+            </div>
+            <div class="tab-row">
+              <button class="history-tab active" type="button" data-prompt-template="planning">规划阶段</button>
+              <button class="history-tab" type="button" data-prompt-template="revision">修订阶段</button>
+              <button class="history-tab" type="button" data-prompt-template="execution">执行阶段</button>
+            </div>
+          </div>
+          <div class="prompt-toolbar">
+            <div>
+              <strong id="promptTemplateTitle">规划阶段</strong>
+              <small id="promptTemplateMeta">加载中</small>
+            </div>
+            <div class="button-row">
+              <button id="refreshPromptTemplateButton" class="ghost" type="button">刷新</button>
+              <button id="savePromptTemplateButton" class="accent" type="button">保存提示词</button>
+            </div>
+          </div>
+          <textarea id="promptTemplateEditor" class="prompt-editor" spellcheck="false"></textarea>
+          <div class="prompt-footer">
+            <div id="promptPlaceholderList" class="placeholder-list"></div>
+            <p id="promptTemplateMessage" class="muted-line"></p>
+          </div>
+        </section>
+
         <section class="panel planning-panel">
           <div class="panel-heading">
             <div>
@@ -199,6 +228,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=document-import-20260427"></script>
+    <script src="/static/app.js?v=prompt-editor-20260428"></script>
   </body>
 </html>
