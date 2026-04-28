@@ -22,7 +22,7 @@ RUN sed -i \
       -e "s|http://security.debian.org/debian-security|${APT_SECURITY_MIRROR}|g" \
       /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
-    && apt-get install -y --no-install-recommends python3 python3-pip git ca-certificates \
+    && apt-get install -y --no-install-recommends python3 python3-pip git ca-certificates procps \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm config set registry "${NPM_REGISTRY}" \

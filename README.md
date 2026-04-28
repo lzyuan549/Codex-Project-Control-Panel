@@ -10,6 +10,7 @@ export SESSION_SECRET='replace-with-a-long-random-string'
 export CODEX_GATEWAY_BASE_URL='https://your-gateway.example.com/v1'
 export CODEX_GATEWAY_API_KEY='your-gateway-key'
 export CODEX_MODEL='your-model-name'
+export CODEX_RUN_TIMEOUT_SECONDS='7200'
 
 docker compose up -d --build
 ```
@@ -73,6 +74,20 @@ codex exec --dangerously-bypass-approvals-and-sandbox -C <workspace> --json -o <
 ```
 
 Codex 配置在容器启动时写入 `~/.codex/config.toml`，使用 `CODEX_GATEWAY_BASE_URL`、`CODEX_GATEWAY_API_KEY` 和 `CODEX_MODEL`。
+单轮 `codex exec` 默认最多运行 7200 秒，可通过 `CODEX_RUN_TIMEOUT_SECONDS` 调整；超时或点击停止时会清理对应进程组，避免长期服务或卡住的子进程残留。
+
+## 常见故障处理
+
+如果轮次日志里出现 `Reconnecting... timeout waiting for child process to exit`，通常是容器内的 `codex exec` 或它启动的构建/服务进程没有正常结束。可按下面顺序处理：
+
+```bash
+docker compose logs -f codex-plan-runner
+docker exec -it codex-plan-runner sh -lc 'codex --version && cat ~/.codex/config.toml'
+docker exec -it codex-plan-runner sh -lc 'ps -ef | grep -E "codex exec|node|npm|java|mvn" | grep -v grep'
+docker compose restart codex-plan-runner
+```
+
+同时确认 `CODEX_GATEWAY_BASE_URL`、`CODEX_GATEWAY_API_KEY`、`CODEX_MODEL` 都已正确设置，服务器能访问对应网关。
 
 ## 历史与下载
 

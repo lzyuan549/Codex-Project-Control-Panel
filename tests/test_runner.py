@@ -227,3 +227,26 @@ print('{"event":"done"}')
     status = manager.status()
     assert status["state"] == "failed"
     assert "did not decrease" in status["job"]["failure_reason"]
+
+
+def test_codex_subprocess_timeout_marks_job_failed(tmp_path: Path, monkeypatch) -> None:
+    fake_codex = tmp_path / "slow_codex.py"
+    fake_codex.write_text(
+        """
+import sys
+import time
+
+sys.stdin.read()
+time.sleep(30)
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CODEX_RUN_TIMEOUT_SECONDS", "1")
+    manager = JobManager(tmp_path / "data", codex_bin=f'"{sys.executable}" "{fake_codex}"')
+    manager.create_job_from_content("- [ ] task 1\n", {})
+
+    asyncio.run(manager.run_current_job())
+
+    status = manager.status()
+    assert status["state"] == "failed"
+    assert "timed out after 1 seconds" in status["job"]["failure_reason"]

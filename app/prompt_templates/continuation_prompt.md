@@ -27,6 +27,7 @@ PROMPT_STAGE: execution
 7. 测试数据使用可以直接使用的中文真实数据，而不是英文模块名、test、demo 等占位数据。
 8. 如果判断上下文即将接近上限，先更新 PLAN.md、HANDOFF.md、TEST_REPORT.md，再输出“可续接提示词”。
 9. 不允许虚构执行结果；未执行就写“未执行 + 原因”。
+10. 运行验证命令时禁止把长期服务留在前台；如需启动 dev server/后端服务，只能用于短时验证，验证完成后必须停止相关进程并在 TEST_REPORT.md 记录命令与结果。
 
 【固定约束】
 - 后端：Java 21，Spring Boot 3.x，MyBatis-Plus。

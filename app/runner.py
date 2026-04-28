@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+import signal
 import shlex
 import shutil
 import subprocess
@@ -44,6 +45,7 @@ SKIPPED_ZIP_PARTS = {
 PROMPT_TEMPLATE_DIR = Path(__file__).resolve().parent / "prompt_templates"
 MAX_LOG_TAIL_CHARS = 24_000
 MAX_FILE_TREE_ITEMS = 1_000
+DEFAULT_CODEX_RUN_TIMEOUT_SECONDS = 2 * 60 * 60
 
 
 class PlanError(ValueError):
@@ -305,12 +307,62 @@ async def stream_to_file(stream: asyncio.StreamReader | None, path: Path) -> Non
             handle.flush()
 
 
+def positive_int_from_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+async def terminate_process_tree(process: asyncio.subprocess.Process, timeout: float = 10) -> None:
+    if process.returncode is not None:
+        return
+
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except PermissionError:
+            process.terminate()
+    else:
+        process.terminate()
+
+    try:
+        await asyncio.wait_for(process.wait(), timeout=timeout)
+        return
+    except asyncio.TimeoutError:
+        pass
+
+    if process.returncode is not None:
+        return
+
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        except PermissionError:
+            process.kill()
+    else:
+        process.kill()
+    await process.wait()
+
+
 class JobManager:
     def __init__(self, data_dir: Path, codex_bin: str = "codex", batch_size: int = 10) -> None:
         self.data_dir = data_dir
         self.jobs_dir = data_dir / "jobs"
         self.codex_command = shlex.split(codex_bin)
         self.batch_size = batch_size
+        self.codex_run_timeout_seconds = positive_int_from_env(
+            "CODEX_RUN_TIMEOUT_SECONDS",
+            DEFAULT_CODEX_RUN_TIMEOUT_SECONDS,
+        )
         self.current_job: Job | None = None
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -542,12 +594,7 @@ class JobManager:
         job.state = "stopping"
         self.save_job_metadata(job)
         if job.active_process and job.active_process.returncode is None:
-            job.active_process.terminate()
-            try:
-                await asyncio.wait_for(job.active_process.wait(), timeout=10)
-            except asyncio.TimeoutError:
-                job.active_process.kill()
-                await job.active_process.wait()
+            await terminate_process_tree(job.active_process)
 
     async def run_planning_job(self, job: Job) -> None:
         job.state = "planning"
@@ -676,6 +723,9 @@ class JobManager:
             "-",
         ]
         env = os.environ.copy()
+        process_kwargs = {}
+        if os.name == "posix":
+            process_kwargs["start_new_session"] = True
         process = await asyncio.create_subprocess_exec(
             *cmd,
             cwd=job.workspace_dir,
@@ -683,19 +733,31 @@ class JobManager:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
+            **process_kwargs,
         )
         job.active_process = process
 
         stdout_task = asyncio.create_task(stream_to_file(process.stdout, stdout_path))
         stderr_task = asyncio.create_task(stream_to_file(process.stderr, stderr_path))
-        if process.stdin is None:
-            raise PlanError("Codex subprocess stdin is unavailable.")
-        process.stdin.write(prompt.encode("utf-8"))
-        await process.stdin.drain()
-        process.stdin.close()
-        await process.wait()
-        await asyncio.gather(stdout_task, stderr_task)
-        job.active_process = None
+        try:
+            if process.stdin is None:
+                raise PlanError("Codex subprocess stdin is unavailable.")
+            process.stdin.write(prompt.encode("utf-8"))
+            await process.stdin.drain()
+            process.stdin.close()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=self.codex_run_timeout_seconds)
+            except asyncio.TimeoutError as exc:
+                await terminate_process_tree(process)
+                await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+                stderr_tail = tail_text(stderr_path, 4_000)
+                raise PlanError(
+                    f"Codex subprocess timed out after {self.codex_run_timeout_seconds} seconds. "
+                    f"{stderr_tail}".strip()
+                ) from exc
+            await asyncio.gather(stdout_task, stderr_task)
+        finally:
+            job.active_process = None
 
         final_message = tail_text(final_path)
         if final_message:
