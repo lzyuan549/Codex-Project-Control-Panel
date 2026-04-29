@@ -65,6 +65,8 @@ const promptPlaceholderList = document.querySelector("#promptPlaceholderList");
 const promptTemplateMessage = document.querySelector("#promptTemplateMessage");
 const refreshPromptTemplateButton = document.querySelector("#refreshPromptTemplateButton");
 const savePromptTemplateButton = document.querySelector("#savePromptTemplateButton");
+const sectionNavButtons = Array.from(document.querySelectorAll("[data-section-target]"));
+const sectionPanels = Array.from(document.querySelectorAll("[data-section-panel]"));
 
 let authenticated = false;
 let pollTimer = null;
@@ -72,6 +74,7 @@ let currentState = "idle";
 let selectedHistoryId = null;
 let activeDocument = "plan";
 let activeHistoryView = "plan";
+let activeSection = "project";
 let uploadMode = "plan";
 let activePromptTemplate = "planning";
 let promptTemplates = [];
@@ -109,6 +112,7 @@ function showApp() {
   authenticated = true;
   loginView.hidden = true;
   appView.hidden = false;
+  setActiveSection(activeSection);
   startPolling();
   refreshPromptTemplates();
 }
@@ -140,6 +144,23 @@ function setBusy(state) {
   startButton.disabled = active || !["awaiting_start", "stopped"].includes(state);
   stopButton.disabled = !["planning", "revising", "running"].includes(state);
   downloadLink.classList.toggle("disabled-link", !hasJob);
+}
+
+function setActiveSection(section) {
+  const nextPanel = sectionPanels.find((panel) => panel.dataset.sectionPanel === section);
+  if (!nextPanel) return;
+
+  activeSection = section;
+  sectionNavButtons.forEach((button) => {
+    const active = button.dataset.sectionTarget === section;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  sectionPanels.forEach((panel) => {
+    const active = panel.dataset.sectionPanel === section;
+    panel.hidden = !active;
+    panel.classList.toggle("active", active);
+  });
 }
 
 function setFileName(input, target, fallback) {
@@ -510,6 +531,9 @@ logoutButton.addEventListener("click", async () => {
 
 uploadModePlan.addEventListener("click", () => setUploadMode("plan"));
 uploadModeDocuments.addEventListener("click", () => setUploadMode("documents"));
+sectionNavButtons.forEach((button) => {
+  button.addEventListener("click", () => setActiveSection(button.dataset.sectionTarget));
+});
 promptTemplateTabs.forEach((button) => {
   button.addEventListener("click", () => selectPromptTemplate(button.dataset.promptTemplate));
 });
@@ -578,6 +602,7 @@ uploadForm.addEventListener("submit", async (event) => {
     await refreshStatus();
     if (importingDocuments) {
       setActiveDocument("plan");
+      setActiveSection("documents");
     }
   } catch (error) {
     uploadMessage.textContent = error.message;
@@ -590,6 +615,7 @@ planButton.addEventListener("click", async () => {
     await api("/api/job/plan", { method: "POST", body: "{}" });
     uploadMessage.textContent = "规划已开始生成。";
     await refreshStatus();
+    setActiveSection("documents");
   } catch (error) {
     uploadMessage.textContent = error.message;
   }
@@ -610,6 +636,7 @@ revisePlanButton.addEventListener("click", async () => {
     revisionFeedbackInput.value = "";
     uploadMessage.textContent = "规划修订已开始。";
     await refreshStatus();
+    setActiveSection("documents");
   } catch (error) {
     uploadMessage.textContent = error.message;
   }
@@ -621,6 +648,7 @@ startButton.addEventListener("click", async () => {
     await api("/api/job/start", { method: "POST", body: "{}" });
     uploadMessage.textContent = "执行已开始。";
     await refreshStatus();
+    setActiveSection("logs");
   } catch (error) {
     uploadMessage.textContent = error.message;
   }
@@ -666,4 +694,5 @@ async function bootstrap() {
 }
 
 setUploadMode("plan");
+setActiveSection("project");
 bootstrap();

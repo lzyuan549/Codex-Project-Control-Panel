@@ -56,6 +56,14 @@ button:hover,
   box-shadow: 0 10px 24px rgba(23, 19, 15, 0.18);
 }
 
+button:focus-visible,
+.download-link:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(15, 127, 115, 0.28);
+  outline-offset: 3px;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -64,7 +72,7 @@ button:disabled {
 }
 
 .shell {
-  width: min(1180px, calc(100% - 32px));
+  width: min(1360px, calc(100% - 32px));
   margin: 0 auto;
   padding: 28px 0 42px;
 }
@@ -180,6 +188,119 @@ textarea {
 .dashboard {
   display: grid;
   gap: 18px;
+}
+
+.dashboard-workspace {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.section-nav {
+  position: sticky;
+  top: 18px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 253, 248, 0.92);
+  box-shadow: 0 16px 44px rgba(39, 34, 26, 0.08);
+}
+
+.section-nav-item {
+  display: grid;
+  grid-template-areas:
+    "index title"
+    "index meta";
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 10px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 12px;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  box-shadow: none;
+}
+
+.section-nav-item:hover {
+  border-color: rgba(15, 127, 115, 0.24);
+  background: #fffaf0;
+  box-shadow: none;
+  transform: none;
+}
+
+.section-nav-item.active {
+  color: #fffdf8;
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.section-nav-index {
+  grid-area: index;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(117, 109, 99, 0.34);
+  border-radius: 50%;
+  color: var(--accent-dark);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.section-nav-item.active .section-nav-index {
+  color: var(--gold);
+  border-color: rgba(255, 253, 248, 0.26);
+}
+
+.section-nav-item strong,
+.section-nav-item small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
+.section-nav-item strong {
+  grid-area: title;
+  font-size: 14px;
+}
+
+.section-nav-item small {
+  grid-area: meta;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.section-nav-item.active small {
+  color: rgba(255, 253, 248, 0.68);
+}
+
+.section-panels,
+.section-panel {
+  min-width: 0;
+}
+
+.section-panel.active {
+  animation: section-in 170ms ease-out;
+}
+
+@keyframes section-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .topbar {
@@ -589,6 +710,65 @@ textarea {
 }
 
 @media (max-width: 820px) {
+  .dashboard {
+    padding-bottom: 92px;
+  }
+
+  .dashboard-workspace {
+    display: block;
+  }
+
+  .section-nav {
+    position: fixed;
+    inset: auto 12px 12px;
+    z-index: 20;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    padding: 6px;
+    border-color: rgba(255, 253, 248, 0.16);
+    background: rgba(33, 29, 24, 0.94);
+    box-shadow: 0 18px 48px rgba(23, 19, 15, 0.32);
+  }
+
+  .section-nav-item {
+    grid-template-areas:
+      "index"
+      "title";
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 5px;
+    min-height: 68px;
+    padding: 8px 4px;
+    color: rgba(255, 253, 248, 0.82);
+    text-align: center;
+  }
+
+  .section-nav-item:hover {
+    background: rgba(255, 253, 248, 0.08);
+  }
+
+  .section-nav-item.active {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .section-nav-index {
+    width: 24px;
+    height: 24px;
+    color: rgba(255, 253, 248, 0.78);
+    border-color: rgba(255, 253, 248, 0.2);
+    font-size: 10px;
+  }
+
+  .section-nav-item strong {
+    font-size: 11px;
+    line-height: 1.18;
+  }
+
+  .section-nav-item small {
+    display: none;
+  }
+
   .topbar,
   .panel-heading {
     align-items: flex-start;
@@ -621,5 +801,11 @@ textarea {
 
   .status-strip article:last-child {
     border-bottom: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section-panel.active {
+    animation: none;
   }
 }
