@@ -1,6 +1,8 @@
 # Docker Web Codex Plan Runner
 
-一个单容器 Web 控制台：可以上传基础项目 ZIP 和项目题目后生成 `PLAN.md`、`HANDOFF.md`、`TEST_REPORT.md`，也可以直接导入这三份文档跳过规划；用户确认后再按 `PLAN.md` 每轮最多 10 个未完成项循环执行。
+一个单容器 Web 控制台：可以上传任意基础项目 ZIP 和项目目标后生成 `PLAN.md`、`HANDOFF.md`、`TEST_REPORT.md`，也可以直接导入这三份文档跳过规划；用户确认后再按 `PLAN.md` 每轮最多 10 个未完成项循环执行。
+
+默认提示词为通用项目流程，不绑定特定语言、框架、数据库、前端形态或目录结构。Codex 会根据当前项目实际文件、用户目标、上传约束和已确认的 `PLAN.md` 选择实现路线。
 
 ## 快速部署
 
@@ -42,8 +44,8 @@ docker compose build --no-cache
 
 ### 生成规划后执行
 
-1. 上传基础项目 ZIP。通常是 `auth-only.zip`，或一个包含 `auth-only/README.md` 的现有项目 ZIP。
-2. 填写项目题目，例如“校园综合服务网页，课程表/失物/二手/公告等全整合，适配手机端”。
+1. 上传基础项目 ZIP。可以是已有工程、模板项目、半成品项目，或任何希望 Codex 继续规划和执行的代码包。
+2. 填写项目目标，例如“为现有后台增加库存预警模块”或“把当前静态页面改造成可交互的移动端原型”。
 3. 可选填写工作区文件夹名；留空会在 `/www/wwwroot/` 下自动新建 `codex-<job_id>`。
 4. 可选上传 `constraints/*.md` 或 `constraints/*.txt`。
 5. 点击“生成规划”，等待 `PLAN.md` 预览。
@@ -59,7 +61,7 @@ docker compose build --no-cache
 5. 点击“导入文档”，任务会直接进入“等待开始”状态。
 6. 点击“开始执行”，Codex 会跳过规划阶段，直接按上传的 `PLAN.md` 执行。
 
-`auth-only` 只作为基础权限模板或复用来源，最终开发仍应落到 `frontend/`、`backend/`、`db/`。
+基础项目只作为复用来源。最终技术栈、目录结构、数据方案、测试方式和部署方式由当前项目实际情况、上传约束和 `PLAN.md` 共同决定。
 
 ## 运行逻辑
 
@@ -71,6 +73,10 @@ docker compose build --no-cache
   - `PLAN.md`
   - `HANDOFF.md`
   - `TEST_REPORT.md`
+- 三个阶段的提示词模板位于 `app/prompt_templates/`，也可以在 Web 页面中编辑：
+  - `planning_prompt.md`：规划阶段，做基线扫描并生成可确认计划。
+  - `revision_prompt.md`：修订阶段，只根据用户反馈调整计划文档。
+  - `continuation_prompt.md`：执行阶段，按已确认计划分轮推进任务。
 - 执行阶段每一轮运行：
 
 ```bash
@@ -84,12 +90,12 @@ Codex 配置在容器启动时写入 `~/.codex/config.toml`，使用 `CODEX_GATE
 
 ## 常见故障处理
 
-如果轮次日志里出现 `Reconnecting... timeout waiting for child process to exit`，通常是容器内的 `codex exec` 或它启动的构建/服务进程没有正常结束。可按下面顺序处理：
+如果轮次日志里出现 `Reconnecting... timeout waiting for child process to exit`，通常是容器内的 `codex exec` 或它启动的构建、测试、开发服务等子进程没有正常结束。可按下面顺序处理：
 
 ```bash
 docker compose logs -f codex-plan-runner
 docker exec -it codex-plan-runner sh -lc 'codex --version && cat ~/.codex/config.toml'
-docker exec -it codex-plan-runner sh -lc 'ps -ef | grep -E "codex exec|node|npm|java|mvn" | grep -v grep'
+docker exec -it codex-plan-runner sh -lc 'ps -ef | grep -E "codex exec|node|npm|pnpm|python|uvicorn|java|mvn" | grep -v grep'
 docker compose restart codex-plan-runner
 ```
 
